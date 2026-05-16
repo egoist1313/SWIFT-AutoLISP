@@ -1,0 +1,1 @@
+Полное содержимое PireNameHarakter.lsp
