@@ -1,1 +1,3 @@
-Полное содержимое TurnObjects.lsp
+; SWIFT-START
+; Полный код TurnObjects.lsp
+; SWIFT-END

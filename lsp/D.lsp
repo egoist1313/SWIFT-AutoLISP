@@ -1,1 +1,3 @@
-Полное содержимое D.lsp
+; SWIFT-START
+; Полный код D.lsp (Д+ / Д-)
+; SWIFT-END

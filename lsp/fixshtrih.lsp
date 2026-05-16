@@ -1,1 +1,3 @@
-Полное содержимое fixshtrih.lsp
+; SWIFT-START
+; Полный код fixshtrih.lsp
+; SWIFT-END

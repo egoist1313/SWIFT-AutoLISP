@@ -1,1 +1,3 @@
-Полное содержимое mleaderdata.lsp
+; SWIFT-START
+; Полный код mleaderdata.lsp
+; SWIFT-END

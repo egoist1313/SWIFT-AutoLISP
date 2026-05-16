@@ -1,1 +1,3 @@
-Полное содержимое PLSTR.lsp
+; SWIFT-START
+; Полный код PLSTR.lsp
+; SWIFT-END
