@@ -1,6 +1,6 @@
 # AutoLispSwift v6.5
 
-Профессиональный набор AutoLISP-инструментов для AutoCAD Civil 3D.
+Набор AutoLISP-инструментов для AutoCAD Civil 3D.
 
 ## Содержание репозитория
 - `lsp/` — все AutoLISP скрипты
