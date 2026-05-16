@@ -1,0 +1,155 @@
+; SWIFT-START
+(vl-load-com)
+(defun c:RENAMEFLBYPIPE (/ selSS obj i pipes fls pipe pt-start pt-end fl pt-fl-start pt-fl-end tol newName diameter pipe-name fl-name obj-name dxf-code old_osmode old_elevation diameter-var err points)
+  (princ "\nВыберите трубы и характерные линии (Enter — завершить): ")
+  ;; Сохраняем системные переменные
+  (setq old_osmode (getvar "OSMODE"))
+  (setq old_elevation (getvar "ELEVATION"))
+  (setvar "OSMODE" 0)
+  (setvar "ELEVATION" 0)
+  ;; Списки для данных
+  (setq pipes nil)
+  (setq fls nil)
+  ;; Выбор объектов
+  (if (setq selSS (ssget '((0 . "AECC_PIPE,AECC_FEATURE_LINE"))))
+    (progn
+      (setq i 0)
+      (princ (strcat "\nВыбрано объектов: " (itoa (sslength selSS))))
+      (while (< i (sslength selSS))
+        (setq obj (vlax-ename->vla-object (ssname selSS i)))
+        (setq obj-name (vla-get-objectname obj))
+        (cond
+          ;; Труба
+          ((= obj-name "AeccDbPipe")
+           (setq pipe-name (vlax-get-property obj 'Name))
+           (if (null pipe-name) (setq pipe-name "Unnamed"))
+           (setq pt-start (vlax-safearray->list (vlax-variant-value (vlax-get-property obj 'PointAtParam 0))))
+           (setq pt-end (vlax-safearray->list (vlax-variant-value (vlax-get-property obj 'PointAtParam 1))))
+           ;; Диаметр
+           (setq diameter 0.0)
+           (setq err (vl-catch-all-apply 'vlax-get-property (list obj 'InnerDiameterOrWidth)))
+           (if (not (vl-catch-all-error-p err))
+             (progn
+               (setq diameter-var err)
+               (if (= (type diameter-var) 'VARIANT) (setq diameter-var (vlax-variant-value diameter-var)))
+               (if (numberp diameter-var) (setq diameter (* 1000.0 diameter-var)))
+             )
+           )
+           (if (= diameter 0.0)
+             (progn
+               (setq err (vl-catch-all-apply 'vlax-get-property (list obj 'NominalDiameter)))
+               (if (not (vl-catch-all-error-p err))
+                 (progn
+                   (setq diameter-var err)
+                   (if (= (type diameter-var) 'VARIANT) (setq diameter-var (vlax-variant-value diameter-var)))
+                   (if (numberp diameter-var) (setq diameter (* 1000.0 diameter-var)))
+                 )
+               )
+             )
+           )
+           (setq pipes (cons (list pt-start pt-end pipe-name diameter) pipes))
+           (princ (strcat "\nОбработана труба: " pipe-name " (D=" (rtos diameter 2 0) "мм)"))
+          )
+          ;; Характерная линия
+          ((= obj-name "AeccDbFeatureLine")
+           (setq fl-name (vlax-get-property obj 'Name))
+           (if (null fl-name) (setq fl-name "Unnamed"))
+           ;; Точки для FL: VLAX-curve
+           (setq pt-fl-start (vl-catch-all-apply 'vlax-curve-getStartPoint (list obj)))
+           (if (vl-catch-all-error-p pt-fl-start)
+             (setq pt-fl-start '(0 0 0))
+           )
+           (setq pt-fl-end (vl-catch-all-apply 'vlax-curve-getEndPoint (list obj)))
+           (if (vl-catch-all-error-p pt-fl-end)
+             (setq pt-fl-end '(0 0 0))
+           )
+           ;; Fallback: getpoints
+           (if (or (= pt-fl-start '(0 0 0)) (= pt-fl-end '(0 0 0)))
+             (progn
+               (setq err (vl-catch-all-apply 'vlax-invoke-method (list obj 'getpoints)))
+               (if (not (vl-catch-all-error-p err))
+                 (progn
+                   (setq points (vlax-safearray->list (vlax-variant-value err)))
+                   (if (>= (length points) 2)
+                     (progn
+                       (setq pt-fl-start (car points))
+                       (setq pt-fl-end (last points))
+                     )
+                   )
+                 )
+               )
+             )
+           )
+           (setq fls (cons (list pt-fl-start pt-fl-end fl-name obj) fls))
+           (princ (strcat "\nОбработана FL: '" fl-name "'"))
+          )
+          (T nil)
+        )
+        (setq i (1+ i))
+      )
+      ;; Статистика
+      (princ (strcat "\nНайдено труб: " (itoa (length pipes)) ", FL: " (itoa (length fls))))
+      ;; Поиск пар
+      (if (and pipes fls)
+        (progn
+          (setq tol 0.5) ; Толерантность (м) — измени, если нужно
+          (foreach fl fls
+            (setq pt-fl-start (car fl)
+                  pt-fl-end (cadr fl)
+                  fl-name (caddr fl)
+                  obj (cadddr fl)
+                  matched nil)
+            (foreach pipe pipes
+              (setq pt-start (car pipe)
+                    pt-end (cadr pipe)
+                    pipe-name (caddr pipe)
+                    diameter (cadddr pipe))
+              ;; Прямая ориентация: FL-start \U+2248 Pipe-start, FL-end \U+2248 Pipe-end (по XY)
+              (if (and (not matched) 
+                       (close-pts pt-fl-start pt-start tol) 
+                       (close-pts pt-fl-end pt-end tol))
+                (progn
+                  (setq newName (strcat "D" (itoa (fix diameter)) "-" pipe-name))
+                  (vlax-put-property obj 'Name newName)
+                  (princ (strcat "\n[OK] FL '" fl-name "' \U+2192 '" newName "' (прямо)"))
+                  (setq matched t)
+                  (setq pipes (vl-remove pipe pipes))
+                )
+                ;; Перевёрнутая ориентация: FL-start \U+2248 Pipe-end, FL-end \U+2248 Pipe-start (по XY)
+                (if (and (not matched) 
+                         (close-pts pt-fl-start pt-end tol) 
+                         (close-pts pt-fl-end pt-start tol))
+                  (progn
+                    (setq newName (strcat "D" (itoa (fix diameter)) "-" pipe-name))
+                    (vlax-put-property obj 'Name newName)
+                    (princ (strcat "\n[OK] FL '" fl-name "' \U+2192 '" newName "' (перевёрнуто)"))
+                    (setq matched t)
+                    (setq pipes (vl-remove pipe pipes))
+                  )
+                )
+              )
+            )
+            (if (not matched)
+              (princ (strcat "\n[SKIP] Нет пары для FL '" fl-name "'"))
+            )
+          )
+          (princ "\nПереименование завершено.")
+        )
+        (princ "\nНет данных для сопоставления (нужны и трубы, и FL).")
+      )
+    )
+    (princ "\nНичего не выбрано.")
+  )
+  ;; Восстановление системных переменных
+  (setvar "OSMODE" old_osmode)
+  (setvar "ELEVATION" old_elevation)
+  (princ)
+)
+;; Проверка близости точек ТОЛЬКО ПО XY (Z игнорируется)
+(defun close-pts (pt1 pt2 tol / dx dy dist)
+  (setq dx (abs (- (car pt1) (car pt2)))   ; X
+        dy (abs (- (cadr pt1) (cadr pt2))) ; Y
+        dist (sqrt (+ (* dx dx) (* dy dy)))) ; расстояние по XY
+  (<= dist tol)
+)
+; SWIFT-END

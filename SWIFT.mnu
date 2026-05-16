@@ -1,10 +1,72 @@
 ;SWIFT.mnu=1.6
+; ==================================================
+; SWIFT.mnu
+; УБРАТЬ пустые строки и комментарии внутри ***TOOLBARS
+; ^C^C НЕ добавлять
+; Сохранять ТОЛЬКО в кодировке ANSI (Windows-1251)!
+; ==================================================
 ***MENUGROUP=SWIFT
 ***POP1
 **SWIFT
 ID_Swift [&SWIFT]
-ID_Close [Р‘С‹СЃС‚СЂРѕРµ Р·Р°РєСЂС‹С‚РёРµ](if (not (member "C:ZAC" (atoms-family 1))) (load "zac.lsp"));zac;
-ID_Plan1 [Р¦РµРЅС‚СЂ РІРёРґР° (РџР›РђРќ1)]РџР›РђРќ1
+ID_Close [Быстрое закрытие](if (not (member "C:ZAC" (atoms-family 1))) (load "zac.lsp"));zac;
+ID_Plan1 [Центр вида (ПЛАН1)]ПЛАН1
 ID_Sep1 [---]
-ID_Poper [РџРѕРїРµСЂРµС‡РЅРёРє (POPER)]_POPER
-... (full menu content)
+ID_Poper [Поперечник (POPER)]_POPER
+ID_PPP [Обработка поперечников (PPP)]ppp
+ID_Offset [Ввод данных сечения]OffsetToPoper
+ID_Sep2 [---]
+ID_Pointtin [Точки с поверхности (POINTTIN)]POINTTIN
+ID_Plstr [Площадь штриховки (PLSTR)]PLSTR
+ID_FixHatch [Контуры штриховок (FixHatchGB)]FixHatchGB
+ID_Sep3 [---]
+ID_DimSlope [Размер откоса]DimByDistance
+ID_DimProps [Свойства размера]dimprops
+ID_Dpod [Допуск/подгонометрия (DPOD)]DPOD
+ID_Sep4 [---]
+ID_SumLength [Сумма длин]SumLinePolyLength
+ID_DelVerts [Удалить вершину (DELVERTS)]DELVERTS
+ID_TurnObj [Поворот объектов по центру]TurnObjects
+ID_Sep5 [---]
+ID_DPlus [Добавить Д (D+)]D+
+ID_DMinus [Убрать Д (D-)]D-
+ID_MLeader [Мультивыноски -> таблица]MLeaderData
+ID_Sep6 [---]
+ID_Pipes [->&Трубы]
+ID_Pire3d [3D полилиния из труб]Pire3dpoly
+ID_PireName [Имя трубы по колодцам]PireName
+ID_ReversePipe [Развернуть трубу (REVERSEPIPE)]REVERSEPIPE
+ID_PireToExcel [Отчёт по трубам в Excel]Piretoexcel
+ID_KolToExcel [Отчёт по колодцам в Excel]KOLTOEXCEL
+ID_RenameFlByPipe [Имя характерных по трубе]RENAMEFLBYPIPE
+[<-]
+***TOOLBARS
+**TB_SWIFT
+ID_TB_Swift [_Toolbar("SWIFT Инструменты", _Floating, _Show, 200, 200, 1)]
+ID_TB_Zac [_Button("Быстрое закрытие", "RCDATA_16_3DDWF_BTN", "RCDATA_16_3DDWF_BTN")](if (not (member "C:ZAC" (atoms-family 1))) (load "zac.lsp"));zac;
+ID_TBSEP1 [_Separator]
+ID_TB_Poper [_Button("Поперечник", "RCDATA_16_INSERT_ABOVE", "RCDATA_16_INSERT_ABOVE")]_POPER
+ID_TB_Pointtin [_Button("Точки с поверхности (POINTTIN)", "ягодники.png", "ягодники.png")]POINTTIN
+ID_TB_Plstr [_Button("Площадь штриховки (PLSTR)", "RCDATA_16_WIPEOUT", "RCDATA_16_WIPEOUT")]PLSTR
+ID_TB_PPP [_Button("Обработка поперечников", "RCDATA_16_TABLE_INS_FIELD", "RCDATA_16_TABLE_INS_FIELD")]ppp
+ID_TBSEP2 [_Separator]
+ID_TB_DimSlope [_Button("Размер откоса", "RCDATA_16_DIMALI", "RCDATA_16_DIMALI")]DimByDistance
+ID_TB_Dimprops [_Button("Свойства размера", "RCDATA_16_BCPARAMETER_HORIZONTAL", "RCDATA_16_BCPARAMETER_HORIZONTAL")]dimprops
+ID_TBSEP3 [_Separator]
+ID_TB_Sum [_Button("Сумма длин отрезков", "RCDATA_16_SELLAS", "RCDATA_16_SELLAS")]SumLinePolyLength
+ID_TB_Delverts [_Button("Удалить вершину", "GRADING_FLINE_WEED_16", "GRADING_FLINE_WEED_16")]DELVERTS
+ID_TB_Dpod [_Button("Допуск/подгонометрия", "RCDATA_16_BXYPARAMETER", "RCDATA_16_BXYPARAMETER")]DPOD
+ID_TB_Turn [_Button("Поворот объектов по центру", "RCDATA_16_ROTATEFACE", "RCDATA_16_ROTATEFACE")]TurnObjects
+ID_TBSEP4 [_Separator]
+ID_TB_DPlus [_Button("Добавить Д", "RCDATA_16_SINGLE_DTEXT", "RCDATA_16_SINGLE_DTEXT")]D+
+ID_TB_DMinus [_Button("Убрать Д", "RCDATA_16_DDEDIT", "RCDATA_16_DDEDIT")]D-
+ID_TB_MLeader [_Button("Мультивыноски -> таблица", "RCDATA_16_MLEADER_ADD_LEADER", "RCDATA_16_MLEADER_ADD_LEADER")]MLeaderData
+ID_TB_FixHatch [_Button("Контуры штриховок", "RCDATA_16_HATCHEDIT", "RCDATA_16_HATCHEDIT")]FixHatchGB
+ID_TBSEP5 [_Separator]
+ID_TB_Pire3d [_Button("3D полилиния из труб", "RCDATA_16_3DPOLY", "RCDATA_16_3DPOLY")]Pire3dpoly
+ID_TB_Pirename [_Button("Имя трубы по колодцам", "RCDATA_MAPANNTEXT", "RCDATA_MAPANNTEXT")]PireName
+ID_TB_ReversePipe [_Button("Развернуть трубу", "RCDATA_16_MIRROR", "RCDATA_16_MIRROR")]REVERSEPIPE
+ID_TBSEP6 [_Separator]
+ID_TB_PireToExcel [_Button("Отчёт по трубам в Excel", "RCDATA_16_TABLE", "RCDATA_16_TABLE")]Piretoexcel
+ID_TB_KolToExcel [_Button("Отчёт по колодцам в Excel", "RCDATA_16_TABLE_INS_FIELD", "RCDATA_16_TABLE_INS_FIELD")]KOLTOEXCEL
+ID_TB_RenameFlByPipe [_Button("Имя характерных по трубе", "RCDATA_16_SINGLE_DTEXT", "RCDATA_16_SINGLE_DTEXT")]RENAMEFLBYPIPE

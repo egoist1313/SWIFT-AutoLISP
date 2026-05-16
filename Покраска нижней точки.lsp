@@ -1,0 +1,32 @@
+(defun c:LowOrange ( / ss en1 en2 z1 z2 ed lower)
+  (princ "\nВыберите две точечные объекта (POINT): ")
+  (setq ss (ssget '((0 . "POINT"))))
+  (cond
+    ((null ss)
+     (princ "\nНичего не выбрано."))
+    ((/= (sslength ss) 2)
+     (princ "\nНужно выбрать ровно две точки."))
+    (t
+     (setq en1 (ssname ss 0)
+           en2 (ssname ss 1)
+           z1  (caddr (cdr (assoc 10 (entget en1))))
+           z2  (caddr (cdr (assoc 10 (entget en2)))))
+     (cond
+       ((< z1 z2) (setq lower en1))
+       ((< z2 z1) (setq lower en2))
+       (t (setq lower nil)))
+     (if lower
+       (progn
+         (setq ed (entget lower))
+         (if (assoc 62 ed)
+           (entmod (subst (cons 62 30) (assoc 62 ed) ed))
+           (entmod (append ed (list (cons 62 30)))))
+         (princ (strcat "\nТочка с Z = " (rtos (caddr (cdr (assoc 10 (entget lower)))))
+                        " окрашена в оранжевый (цвет 30)."))
+       )
+       (princ "\nОтметки равны — окрашивание не выполнено.")
+     )
+    )
+  )
+  (princ)
+)

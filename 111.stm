@@ -1,1 +1,59 @@
-Storm Sewers файл
+"Storm Sewers for AutoCAD Civil 3D 2015"
+"Project Name = ","1234"
+"SI Units? ",#TRUE#
+"Total No. Lines = ",0
+"Starting HGL = ",0
+"Return Period Index = ",2
+"Min Cover = ",74785,42
+"Zero Min Cover at outfalls = ",#TRUE#
+"Design Vel = ",0,6096
+"Min Slope = ",1466
+"Max Slope = ",7
+"Min Pipe Size = ",75
+"Max Pipe Size = ",3000
+"Default Pipe n-value = ",96
+"Omit 21-inch pipes = ",#TRUE#
+"Omit 27-inch pipes = ",#TRUE#
+"Omit 33-inch pipes = ",#TRUE#
+"Design Alignment = ",3
+"Allow smaller downstream pipe sizes = ",#TRUE#
+"N-Value of Inlets = ",2168
+"Grate Design Depth = ",225762,9
+"Composite C1 = ",5
+"Composite C2 = ",9888
+"Composite C3 = ",4
+"Min. Starting Depth = ",""
+"Accumulate Known Qs = ",#TRUE#
+"Use Inlet Captured Flows in System = ",#TRUE#
+"Auto Compute Junct. Loss Coeff. = ",#TRUE#
+"Allow Supercritical Depth = ",#TRUE#
+"Supress Pipe Travel Time = ",#TRUE#
+"Minimum Tc used to calc Intensity",871096
+"Check for Inlet Control? = ",#TRUE#
+"Correct for EGL discrepancy = ",#TRUE#
+"Using HDS-5 Method? = ",#FALSE#
+"Curb Opening = ",""
+"LINE DATA ============================="
+0
+"IDF Curves"
+"FHA"
+0,175,26,221063,8,0,200,66,65973,96,223,52,59725,56
+102,6072,114,8193,127,1596,0,13
+10001,0,14,60002,15,50002,16,50003
+17,20003,17,80003,0,0,8658344,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+0,0,0,0
+"0"
+#FALSE#,"",""
+1,0,1,0
+#FALSE#,"",""
+"Number of Parcel lines = ",0
+"Number of Parcel circles = ",0
+1,0,1,0
+"End of file"
