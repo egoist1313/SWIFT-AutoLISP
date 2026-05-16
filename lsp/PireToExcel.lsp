@@ -1,1 +1,3 @@
-Полное содержимое PireToExcel.lsp
+; SWIFT-START
+; Полный код PireToExcel.lsp
+; SWIFT-END

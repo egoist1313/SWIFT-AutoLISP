@@ -1,1 +1,3 @@
-Полное содержимое zac.lsp
+; SWIFT-START
+; Полный код zac.lsp
+; SWIFT-END

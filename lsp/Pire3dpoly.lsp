@@ -1,1 +1,3 @@
-Полное содержимое Pire3dpoly.lsp
+; SWIFT-START
+; Полный код Pire3dpoly.lsp
+; SWIFT-END
