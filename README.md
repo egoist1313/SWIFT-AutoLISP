@@ -1,1 +1,17 @@
-See full README in the repository. Professional AutoLISP toolkit for AutoCAD Civil 3D.
+# AutoLispSwift v6.5
+
+Профессиональный набор AutoLISP-инструментов для AutoCAD Civil 3D.
+
+Полная документация и инструменты доступны в репозитории.
+
+## Установка
+Скопируйте файлы в папку поддержки AutoCAD и загрузите `load_all.lsp` (если есть) или отдельные команды.
+
+## Основные команды
+- POPER / ПОПЕР — поперечники
+- DPOD / ДПОД — допуски и подгонка размеров
+- PIRETOEXCEL, KOLTOEXCEL — отчёты по трубам и колодцам
+- POINTTIN — точки на TIN-поверхности
+- И многие другие
+
+Подробности в файлах и старом README.

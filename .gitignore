@@ -1,0 +1,18 @@
+# AutoCAD / AutoLISP
+*.bak
+*.log
+*.tmp
+*.fas
+*.vlx
+*~
+.DS_Store
+Thumbs.db
+
+# Temp DCL
+*.dcl
+
+# Backup
+backup/
+
+# OS
+.DS_Store
