@@ -50,7 +50,7 @@
       (write-line " : list_box {" fp)
       (write-line " key = \"history_list\";" fp)
       (write-line " width = 35;" fp)
-      (height = 14;" fp)
+      (write-line " height = 14;" fp)
       (write-line " fixed_height = true;" fp)
       (write-line " }" fp)
       (write-line " }" fp)
@@ -236,7 +236,7 @@
 )
 (defun add-to-dpod-history (is-project actual minDev maxDev / entry hist fp)
   (setq entry (if is-project
-                (strcat "П: " (vl-string-trim " \t\r\n" (if actual actual "")))
+                (strcat "П: " (vl-string-trim " \t\r\n" (if actual actual ""))
                 (strcat "Откл: " (rtos minDev 2 3) " .. " (rtos maxDev 2 3))))
   (setq hist (load-dpod-history))
   (if (not (member entry hist))
@@ -329,9 +329,9 @@
       (set_tile "mode_random"  (cond ((getenv "DIMFUDGE_MODE_RANDOM")) ("1")))
       (set_tile "mode_project" (cond ((getenv "DIMFUDGE_MODE_PROJECT")) ("0")))
       (action_tile "mode_random"
-        "(update-history-list) (mode_tile \"single_line\" 0) (mode_tile \"second_line\" 0) (mode_tile \"replace_mode\" 0)"
+        "(update-history-list) (mode_tile \"single_line\" 0) (mode_tile \"second_line\" 0) (mode_tile \"replace_mode\" 0)")
       (action_tile "mode_project"
-        "(update-history-list) (mode_tile \"single_line\" 1) (mode_tile \"second_line\" 1) (mode_tile \"replace_mode\" 1)"
+        "(update-history-list) (mode_tile \"single_line\" 1) (mode_tile \"second_line\" 1) (mode_tile \"replace_mode\" 1)")
       (action_tile "single_line" "")
       (action_tile "second_line" "")
       (action_tile "history_list"
@@ -469,7 +469,7 @@
                 )
                 (princ (strcat "\nDEBUG fullText = [" (if fullText fullText "nil") "]"))
                 ;; ==================== Поиск разделителя: \P (MTEXT) или \X (DIMENSION) ====================
-                (setq p_pos (vl-string-search "\\P" (if fullText fullText ""))
+                (setq p_pos (vl-string-search "\\P" (if fullText fullText "")))
                 (setq x_pos (vl-string-search "\\X" (if fullText fullText "")))
                 (setq split_pos
                   (cond
@@ -515,7 +515,7 @@
                    (setq raw_part
                      (if split_pos
                        (substr (if fullText fullText "") 1 split_pos)
-                       (if fullText fullText "")
+                       (if fullText fullText ""))
                      )
                    )
                    (princ "\nDEBUG: обрабатываем первую строку")
@@ -591,13 +591,12 @@
                 (if (null cleaned_orig)          (setq cleaned_orig ""))
                 (if (null old_num_str)           (setq old_num_str ""))
                 (if (null raw_original_content)  (setq raw_original_content ""))
-                (setq final_prefix (if (= use_prefix 1) prefix " "))
+                (setq final_prefix (if (= use_prefix 1) prefix ""))
                 (setq final_suffix (if (= use_suffix 1) suffix ""))
                 (princ (strcat "\nDEBUG final_prefix=[" final_prefix "] final_suffix=[" final_suffix "]"))
                 ;; ==================== Убрать дубль префикса / суффикса (визуально) ====================
                 (setq visible_text
-                  (clean-mtext (remove-underline (if raw_original_content raw_original_content "")))
-                )
+                  (clean-mtext (remove-underline (if raw_original_content raw_original_content ""))))
                 (if (and (= use_prefix 1)
                          (> (strlen visible_text) (strlen prefix))
                          (= (substr visible_text 1 (strlen prefix)) prefix))
@@ -621,8 +620,7 @@
                     (setq first_raw_part (substr (if fullText fullText "") 1 split_pos))
                     (setq first_num_and_prec
                       (extract-number-and-precision
-                        (remove-underline (vl-string-trim " \t\r\n" first_raw_part)))
-                    )
+                        (remove-underline (vl-string-trim " \t\r\n" first_raw_part))))
                     (if first_num_and_prec
                       (progn
                         (setq first_meas_m      (car first_num_and_prec)
@@ -636,7 +634,7 @@
                       )
                       (progn
                         (setq first_meas_m      meas_m
-                              first_precision   precision)
+                              first_precision   precision
                               first_decChar     decChar
                               first_old_num_str "<>"
                               first_cleaned_orig "<>")
@@ -676,8 +674,7 @@
                     (setq second_raw (substr (if fullText fullText "") (+ split_pos 3)))
                     (setq second_num_and_prec
                       (extract-number-and-precision
-                        (remove-underline (vl-string-trim " \t\r\n" second_raw)))
-                    )
+                        (remove-underline (vl-string-trim " \t\r\n" second_raw))))
                     (if second_num_and_prec
                       (progn
                         (setq second_meas_m      (car second_num_and_prec)
@@ -691,7 +688,7 @@
                       )
                       (progn
                         (setq second_meas_m      meas_m
-                              second_precision   precision)
+                              second_precision   precision
                               second_decChar     decChar
                               second_old_num_str old_num_str
                               second_cleaned_orig cleaned_orig)
