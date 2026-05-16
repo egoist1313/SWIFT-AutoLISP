@@ -1,0 +1,10 @@
+;SWIFT.mnu=1.6
+***MENUGROUP=SWIFT
+***POP1
+**SWIFT
+ID_Swift [&SWIFT]
+ID_Close [Быстрое закрытие](if (not (member "C:ZAC" (atoms-family 1))) (load "zac.lsp"));zac;
+ID_Plan1 [Центр вида (ПЛАН1)]ПЛАН1
+ID_Sep1 [---]
+ID_Poper [Поперечник (POPER)]_POPER
+... (full menu content)
