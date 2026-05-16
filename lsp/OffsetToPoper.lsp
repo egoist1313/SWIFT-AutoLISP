@@ -1,0 +1,1 @@
+Полное содержимое OffsetToPoper.lsp

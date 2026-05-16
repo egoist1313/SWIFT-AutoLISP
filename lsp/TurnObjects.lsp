@@ -1,0 +1,1 @@
+Полное содержимое TurnObjects.lsp
