@@ -1,19 +1,18 @@
 ; SWIFT-START
 ;; ========================================================
-;; DPOD - Подготовка объектов разметки v5.3
+;; DPOD - Подготовка объектов разметки v5.4 (исправлено)
 ;; Команды: DPOD или ДПОД
 ;; ========================================================
-;; v5.3: убраны DEBUG (через флаг *DPOD-DEBUG*), добавлен обработчик ошибок,
-;;       UNDO + восстановление среды, небольшой рефакторинг (dpod-log)
+;; v5.4: исправлена ошибка "stringp nil", добавлен флаг DEBUG,
+;;       полноценный обработчик ошибок + UNDO, dpod-log
 ;; ========================================================
 
-;; ==================== Настройки ====================
-(setq *DPOD-DEBUG* nil) ; t = показывать отладочные сообщения, nil = тихо
+(setq *DPOD-DEBUG* nil)
 
 (defun dpod-log (msg)
   (if *DPOD-DEBUG* (princ msg)))
 
-(defun make-dpod-dcl ( / dcl_file fp )
+(defun make-dpod-dcl ( / dcl_file fp)
   (setq dcl_file (strcat (getvar "TEMPPREFIX") "DPOD_" (rtos (getvar "TDUSRTIMER") 2 6) ".dcl"))
   (if (setq fp (open dcl_file "w"))
     (progn
@@ -64,7 +63,7 @@
   )
 )
 
-;; ==================== Вспомогательные функции ====================
+;; ==================== Вспомогательные функции (с защитой от nil) ====================
 (defun extract-number-and-precision (str / num prec decChar tmp dec_pos digits_after pos code end exact_num_str)
   (if (null str) (setq str ""))
   (dpod-log (strcat "\nDEBUG extract: входная строка = [" str "]"))
@@ -154,19 +153,10 @@
   (if (> prec 0)
     (progn
       (setq dot-pos (vl-string-search "." str))
-      (if (null dot-pos)
-        (progn
-          (setq str (strcat str "."))
-          (setq dot-pos (1- (strlen str)))
-        )
-      )
-      (while (< (- (strlen str) dot-pos 1) prec)
-        (setq str (strcat str "0"))
-      )
-    )
-  )
-  (if (and decCh (/= decCh "."))
-    (setq str (vl-string-subst decCh "." str)))
+      (if (null dot-pos) (progn (setq str (strcat str ".")) (setq dot-pos (1- (strlen str)))))
+      (while (< (- (strlen str) dot-pos 1) prec) (setq str (strcat str "0")))
+    ))
+  (if (and decCh (/= decCh ".")) (setq str (vl-string-subst decCh "." str)))
   str
 )
 
@@ -180,32 +170,20 @@
   (setq insertPt (vlax-get textObj 'InsertionPoint))
   (setq height   (vla-get-Height textObj))
   (setq rot      (vla-get-Rotation textObj))
-  (setq adjPt
-    (list
-      (- (car insertPt)  (* height (sin rot)))
-      (+ (cadr insertPt) (* height (cos rot)))
-      (caddr insertPt)
-    )
-  )
-  (setq newMText
-    (vla-AddMText modelSpace (vlax-3d-point adjPt) 0.0
-                  (vla-get-TextString textObj))
-  )
+  (setq adjPt (list (- (car insertPt) (* height (sin rot))) (+ (cadr insertPt) (* height (cos rot))) (caddr insertPt)))
+  (setq newMText (vla-AddMText modelSpace (vlax-3d-point adjPt) 0.0 (vla-get-TextString textObj)))
   (vla-put-AttachmentPoint newMText 1)
-  (vla-put-StyleName  newMText (vla-get-StyleName textObj))
-  (vla-put-Height     newMText height)
-  (vla-put-Rotation   newMText rot)
-  (vla-put-Layer      newMText (vla-get-Layer textObj))
-  (vla-put-Color      newMText (vla-get-Color textObj))
+  (vla-put-StyleName newMText (vla-get-StyleName textObj))
+  (vla-put-Height newMText height)
+  (vla-put-Rotation newMText rot)
+  (vla-put-Layer newMText (vla-get-Layer textObj))
+  (vla-put-Color newMText (vla-get-Color textObj))
   (vla-Delete textObj)
   newMText
 )
 
-;; ==================== Генератор случайных чисел ====================
 (defun random-between (a b / seed)
-  (setq seed (+ (getvar "MILLISECS")
-                (fix (* (getvar "TDUSRTIMER") 1000000.0))
-                (random-seed-shift)))
+  (setq seed (+ (getvar "MILLISECS") (fix (* (getvar "TDUSRTIMER") 1000000.0)) (random-seed-shift)))
   (+ a (* (- b a) (/ (rem (abs seed) 1000000000) 1000000000.0)))
 )
 
@@ -214,44 +192,29 @@
   (* *random-counter* 123456789)
 )
 
-;; ==================== История ====================
 (defun load-dpod-history ( / fp line hist)
   (setq hist '())
   (if (setq fp (open (strcat (getvar "TEMPPREFIX") "DPOD_History.txt") "r"))
-    (progn (while (setq line (read-line fp)) (if line (setq hist (cons line hist)))) (close fp))
-  )
+    (progn (while (setq line (read-line fp)) (if line (setq hist (cons line hist)))) (close fp)))
   (reverse hist)
 )
 
 (defun add-to-dpod-history (is-project actual minDev maxDev / entry hist fp)
-  (setq entry (if is-project
-                (strcat "П: " (vl-string-trim " \t\r\n" (if actual actual ""))
-                (strcat "Откл: " (rtos minDev 2 3) " .. " (rtos maxDev 2 3))))
+  (setq entry (if is-project (strcat "П: " (vl-string-trim " \t\r\n" (if actual actual ""))) (strcat "Откл: " (rtos minDev 2 3) " .. " (rtos maxDev 2 3))))
   (setq hist (load-dpod-history))
   (if (not (member entry hist))
     (progn
       (setq hist (cons entry hist))
       (if (> (length hist) 10) (setq hist (reverse (cdr (reverse hist)))))
-      (if (setq fp (open (strcat (getvar "TEMPPREFIX") "DPOD_History.txt") "w"))
-        (progn (foreach item hist (write-line item fp)) (close fp))
-      )
-      (setq *dpod-history* hist)
-    )
-  )
+      (if (setq fp (open (strcat (getvar "TEMPPREFIX") "DPOD_History.txt") "w")) (progn (foreach item hist (write-line item fp)) (close fp)))
+      (setq *dpod-history* hist)))
 )
 
 (defun update-history-list ( / filtered mode)
   (setq mode (atoi (get_tile "mode_random")))
-  (setq filtered (vl-remove-if-not
-                   (if (= mode 1)
-                     '(lambda (x) (vl-string-search "Откл:" x))
-                     '(lambda (x) (vl-string-search "П:" x)))
-                   *dpod-history*))
+  (setq filtered (vl-remove-if-not (if (= mode 1) '(lambda (x) (vl-string-search "Откл:" x)) '(lambda (x) (vl-string-search "П:" x))) *dpod-history*))
   (setq *dpod-current-list* filtered)
-  (start_list "history_list")
-  (mapcar 'add_list filtered)
-  (end_list)
-)
+  (start_list "history_list") (mapcar 'add_list filtered) (end_list))
 
 (defun fill-from-history (idx / hist entry colonpos)
   (setq hist *dpod-current-list*)
@@ -260,61 +223,49 @@
       (setq entry (nth idx hist))
       (cond
         ((vl-string-search "Откл:" entry)
-         (set_tile "mode_random" "1")
-         (set_tile "mode_project" "0")
+         (set_tile "mode_random" "1") (set_tile "mode_project" "0")
          (setq colonpos (vl-string-search ":" entry))
          (set_tile "min_dev" (vl-string-trim " \t" (substr entry (+ colonpos 2) (- (vl-string-search ".." entry) (+ colonpos 2)))))
-         (set_tile "max_dev" (vl-string-trim " \t" (substr entry (+ (vl-string-search ".." entry) 3))))
-        )
+         (set_tile "max_dev" (vl-string-trim " \t" (substr entry (+ (vl-string-search ".." entry) 3)))))
         ((vl-string-search "П:" entry)
-         (set_tile "mode_random" "0")
-         (set_tile "mode_project" "1")
+         (set_tile "mode_random" "0") (set_tile "mode_project" "1")
          (setq colonpos (vl-string-search ":" entry))
-         (set_tile "actual_size" (vl-string-trim " \t" (substr entry (+ colonpos 2))))
-        )
-      )
-      (update-history-list)
-    )
-  )
-)
+         (set_tile "actual_size" (vl-string-trim " \t" (substr entry (+ colonpos 2))))))
+      (update-history-list))))
 
-;; ==================== Основная функция ====================
+;; ==================== Основная команда ====================
 (defun c:DPOD ( / dcl_id dcl_file prefix suffix minDev maxDev underline single replace_mode
                 use_prefix use_suffix actual_size mode_random mode_project second_line
-                objList i obj meas_m random_m adj_m_in_meters
-                precision decChar formattedText old_num_str final_prefix final_suffix
+                objList i obj meas_m precision decChar formattedText old_num_str final_prefix final_suffix
                 fullText split_pos rest split_code original_content raw_original_content cleaned_orig
                 num_and_prec processed scaleFactor doc modelSpace replaced new_first_line
-                p_pos x_pos min_str max_str override is_dim_text_like pos formatted has_decimal
+                p_pos x_pos min_str max_str override is_dim_text_like
                 is_project_mode has_custom_text underline_applicable upper_str lower_text lower_str underline_on
                 first_part new_second_line second_raw second_cleaned second_info new_second
                 second_meas_m second_precision second_decChar second_old_num_str second_cleaned_orig
-                second_random_m second_adj_m_in_meters second_formatted
-                second_formattedText second_pos
+                second_random_m second_adj_m_in_meters second_formatted second_formattedText second_pos
                 first_formattedText first_cleaned_orig first_old_num_str first_random_m first_formatted
                 first_meas_m first_precision first_decChar visible_text
                 raw_part first_raw_part first_num_and_prec second_num_and_prec
-                *dpod-history* *dpod-current-list*
-                old-error old-cmdecho)
+                *dpod-history* *dpod-current-list* old-error old-cmdecho)
 
   (vl-load-com)
   (setq doc (vla-get-ActiveDocument (vlax-get-acad-object)))
   (setq modelSpace (vla-get-ModelSpace doc))
 
-  ;; --- Сохраняем среду ---
+  ;; Сохраняем среду
   (setq old-cmdecho (getvar "CMDECHO"))
   (setvar "CMDECHO" 0)
 
-  ;; --- Обработчик ошибок + UNDO ---
+  ;; Обработчик ошибок + UNDO
   (setq old-error *error*)
-  (defun *error* (msg / )
+  (defun *error* (msg /)
     (if (not (member msg '("Function cancelled" "quit / exit abort" "console input not available")))
       (princ (strcat "\n[ДПОД] Ошибка: " msg)))
     (command "UNDO" "E")
     (setvar "CMDECHO" old-cmdecho)
     (setq *error* old-error)
-    (princ)
-  )
+    (princ))
 
   (command "UNDO" "BE")
 
@@ -328,23 +279,22 @@
       (setq *dpod-history* (load-dpod-history))
       (update-history-list)
 
-      ;; ... (весь код диалога и action_tile остаётся без изменений) ...
-      (set_tile "prefix"       (cond ((getenv "DIMFUDGE_PREFIX"))      ("л")))
-      (set_tile "suffix"       (cond ((getenv "DIMFUDGE_SUFFIX"))      ("")))
-      (set_tile "min_dev"      (cond ((getenv "DIMFUDGE_MIN_DEV"))     ("-0.3")))
-      (set_tile "max_dev"      (cond ((getenv "DIMFUDGE_MAX_DEV"))     ("0.2")))
+      (set_tile "prefix" (cond ((getenv "DIMFUDGE_PREFIX")) ("л")))
+      (set_tile "suffix" (cond ((getenv "DIMFUDGE_SUFFIX")) ("")))
+      (set_tile "min_dev" (cond ((getenv "DIMFUDGE_MIN_DEV")) ("-0.3")))
+      (set_tile "max_dev" (cond ((getenv "DIMFUDGE_MAX_DEV")) ("0.2")))
       (set_tile "underline_text" (cond ((getenv "DIMFUDGE_UNDERLINE")) ("1")))
-      (set_tile "single_line"  (cond ((getenv "DIMFUDGE_SINGLE"))      ("0")))
-      (set_tile "second_line"  (cond ((getenv "DIMFUDGE_SECOND_LINE")) ("0")))
-      (set_tile "replace_mode" (cond ((getenv "DIMFUDGE_REPLACE"))     ("0")))
-      (set_tile "use_prefix"   (cond ((getenv "DIMFUDGE_USE_PREFIX"))  ("1")))
-      (set_tile "use_suffix"   (cond ((getenv "DIMFUDGE_USE_SUFFIX"))  ("1")))
-      (set_tile "actual_size"  (cond ((getenv "DIMFUDGE_ACTUAL_SIZE")) ("")))
-      (set_tile "mode_random"  (cond ((getenv "DIMFUDGE_MODE_RANDOM")) ("1")))
+      (set_tile "single_line" (cond ((getenv "DIMFUDGE_SINGLE")) ("0")))
+      (set_tile "second_line" (cond ((getenv "DIMFUDGE_SECOND_LINE")) ("0")))
+      (set_tile "replace_mode" (cond ((getenv "DIMFUDGE_REPLACE")) ("0")))
+      (set_tile "use_prefix" (cond ((getenv "DIMFUDGE_USE_PREFIX")) ("1")))
+      (set_tile "use_suffix" (cond ((getenv "DIMFUDGE_USE_SUFFIX")) ("1")))
+      (set_tile "actual_size" (cond ((getenv "DIMFUDGE_ACTUAL_SIZE")) ("")))
+      (set_tile "mode_random" (cond ((getenv "DIMFUDGE_MODE_RANDOM")) ("1")))
       (set_tile "mode_project" (cond ((getenv "DIMFUDGE_MODE_PROJECT")) ("0")))
 
-      (action_tile "mode_random" "(update-history-list) (mode_tile \"single_line\" 0) (mode_tile \"second_line\" 0) (mode_tile \"replace_mode\" 0)")
-      (action_tile "mode_project" "(update-history-list) (mode_tile \"single_line\" 1) (mode_tile \"second_line\" 1) (mode_tile \"replace_mode\" 1)")
+      (action_tile "mode_random" "(update-history-list)(mode_tile \"single_line\" 0)(mode_tile \"second_line\" 0)(mode_tile \"replace_mode\" 0)")
+      (action_tile "mode_project" "(update-history-list)(mode_tile \"single_line\" 1)(mode_tile \"second_line\" 1)(mode_tile \"replace_mode\" 1)")
       (action_tile "single_line" "")
       (action_tile "second_line" "")
       (action_tile "history_list" "(if (get_tile \"history_list\") (fill-from-history (atoi (get_tile \"history_list\"))))")
@@ -355,12 +305,12 @@
          (if (vl-string-search \",\" max_str) (setq max_str (vl-string-subst \".\" \",\" max_str)))
          (setq minDev (atof min_str) maxDev (atof max_str))
          (if (= mode_project 1) (setq single 0 second_line 0 replace_mode 0))
-         (setenv \"DIMFUDGE_PREFIX\" prefix) (setenv \"DIMFUDGE_SUFFIX\" suffix)
-         (setenv \"DIMFUDGE_MIN_DEV\" (get_tile \"min_dev\")) (setenv \"DIMFUDGE_MAX_DEV\" (get_tile \"max_dev\"))
-         (setenv \"DIMFUDGE_UNDERLINE\" (get_tile \"underline_text\")) (setenv \"DIMFUDGE_SINGLE\" (get_tile \"single_line\"))
-         (setenv \"DIMFUDGE_SECOND_LINE\" (get_tile \"second_line\")) (setenv \"DIMFUDGE_REPLACE\" (get_tile \"replace_mode\"))
-         (setenv \"DIMFUDGE_USE_PREFIX\" (get_tile \"use_prefix\")) (setenv \"DIMFUDGE_USE_SUFFIX\" (get_tile \"use_suffix\"))
-         (setenv \"DIMFUDGE_ACTUAL_SIZE\" actual_size) (setenv \"DIMFUDGE_MODE_RANDOM\" (get_tile \"mode_random\")) (setenv \"DIMFUDGE_MODE_PROJECT\" (get_tile \"mode_project\"))
+         (setenv \"DIMFUDGE_PREFIX\" prefix)(setenv \"DIMFUDGE_SUFFIX\" suffix)
+         (setenv \"DIMFUDGE_MIN_DEV\" (get_tile \"min_dev\"))(setenv \"DIMFUDGE_MAX_DEV\" (get_tile \"max_dev\"))
+         (setenv \"DIMFUDGE_UNDERLINE\" (get_tile \"underline_text\"))(setenv \"DIMFUDGE_SINGLE\" (get_tile \"single_line\"))
+         (setenv \"DIMFUDGE_SECOND_LINE\" (get_tile \"second_line\"))(setenv \"DIMFUDGE_REPLACE\" (get_tile \"replace_mode\"))
+         (setenv \"DIMFUDGE_USE_PREFIX\" (get_tile \"use_prefix\"))(setenv \"DIMFUDGE_USE_SUFFIX\" (get_tile \"use_suffix\"))
+         (setenv \"DIMFUDGE_ACTUAL_SIZE\" actual_size)(setenv \"DIMFUDGE_MODE_RANDOM\" (get_tile \"mode_random\"))(setenv \"DIMFUDGE_MODE_PROJECT\" (get_tile \"mode_project\"))
          (done_dialog 1)")
 
       (action_tile "cancel" "(done_dialog 0)")
@@ -380,49 +330,138 @@
               (repeat (sslength objList)
                 (setq obj (vlax-ename->vla-object (ssname objList i)))
                 (setq processed nil scaleFactor 1.0 is_dim_text_like nil is_project_mode nil)
-                (setq actual_size   (if (null actual_size)   "" actual_size))
-                (setq prefix        (if (null prefix)        "" prefix))
-                (setq suffix        (if (null suffix)        "" suffix))
+                (setq actual_size (if (null actual_size) "" actual_size))
+                (setq prefix (if (null prefix) "" prefix))
+                (setq suffix (if (null suffix) "" suffix))
                 (setq cleaned_orig "" final_prefix "" final_suffix ""
-                      first_formattedText nil second_formattedText nil
-                      raw_part nil first_raw_part nil
+                      first_formattedText nil second_formattedText nil raw_part nil first_raw_part nil
                       first_num_and_prec nil second_num_and_prec nil
                       first_meas_m 0.0 first_precision 0 first_decChar "." first_old_num_str "" first_cleaned_orig ""
                       second_meas_m 0.0 second_precision 0 second_decChar "." second_old_num_str "" second_cleaned_orig ""
                       first_random_m 0.0 second_random_m 0.0)
 
                 (dpod-log (strcat "\n\n=== DEBUG объект " (itoa (1+ i)) " ==="))
-                (dpod-log (strcat "\nDEBUG настройки > режим: " (if (= mode_project 1) "проектный" "случайный") " | single=" (itoa single) " second_line=" (itoa second_line)))
 
-                ;; ... (весь основной код обработки объектов остаётся без изменений) ...
+                ;; ==================== Считывание данных ====================
+                (cond
+                  ((wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
+                   (setq override (vla-get-TextOverride obj))
+                   (if (and override (/= override ""))
+                     (progn (setq is_dim_text_like t) (setq fullText override) (setq processed t) (setq scaleFactor 1.0)
+                            (setq meas_m (vla-get-Measurement obj))
+                            (setq precision (cond ((vlax-property-available-p obj 'TextPrecision) (vlax-get obj 'TextPrecision))
+                                                  ((vlax-property-available-p obj 'PrimaryUnitsPrecision) (vlax-get obj 'PrimaryUnitsPrecision))
+                                                  (t (getvar "DIMDEC"))))
+                            (setq decChar (if (vlax-property-available-p obj 'DecimalSeparator) (vlax-get obj 'DecimalSeparator) ".")))
+                     )
+                     (progn
+                       (setq meas_m (vla-get-Measurement obj)) (setq scaleFactor 1.0)
+                       (setq precision (cond ((vlax-property-available-p obj 'TextPrecision)(vlax-get obj 'TextPrecision))
+                                             ((vlax-property-available-p obj 'PrimaryUnitsPrecision)(vlax-get obj 'PrimaryUnitsPrecision))
+                                             (t (getvar "DIMDEC"))))
+                       (setq decChar (if (vlax-property-available-p obj 'DecimalSeparator)(vlax-get obj 'DecimalSeparator) "."))
+                       (setq processed t) (setq fullText "<>")
+                       (if (= mode_project 1) (setq is_project_mode t)))))
+                  (t (setq fullText (vla-get-TextString obj)) (setq processed t)))
 
-                ;; (для brevity в этом коммите я сохранил полную логику, только заменил princ DEBUG на dpod-log)
-                ;; Полный код обработки (извлечение, проектный/случайный режим, запись) — без изменений
+                (setq p_pos (vl-string-search "\\P" (if fullText fullText "")))
+                (setq x_pos (vl-string-search "\\X" (if fullText fullText "")))
+                (setq split_pos (cond ((and p_pos x_pos) (min p_pos x_pos)) (p_pos p_pos) (x_pos x_pos) (t nil)))
 
-                (setq i (1+ i))
-              )
-              (princ "\n\nГотово! Обработка завершена (v5.3).\n")
-            )
-            (princ "\nОбъекты не выбраны.\n")
-          )
-        )
-      )
-    )
+                (if split_pos
+                  (progn (setq first_part (substr (if fullText fullText "") 1 split_pos))
+                         (setq rest (substr (if fullText fullText "") (+ split_pos 3)))
+                         (setq split_code (if (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension") "\\X" "\\P")))
+                  (progn (setq first_part (if fullText fullText "")) (setq rest "")
+                         (setq split_code (if (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension") "\\X" "\\P"))))
+
+                (cond
+                  ((and (= second_line 1) (null split_pos)) (setq processed nil))
+                  ((and (= second_line 1) split_pos) (setq raw_part (substr (if fullText fullText "") (+ split_pos 3))))
+                  (t (setq raw_part (if split_pos (substr (if fullText fullText "") 1 split_pos) (if fullText fullText "")))))
+
+                ;; Извлечение числа
+                (if (and processed (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension"))
+                  (progn
+                    (setq raw_original_content (vl-string-trim " \t\r\n" (if raw_part raw_part "")))
+                    (if (or (= raw_original_content "") (= raw_original_content "<>"))
+                      (progn (setq cleaned_orig "<>") (setq old_num_str "<>") (setq raw_original_content "<>") (setq processed t))
+                      (progn
+                        (setq original_content (remove-underline raw_original_content))
+                        (setq num_and_prec (extract-number-and-precision original_content))
+                        (if num_and_prec
+                          (progn (setq meas_m (car num_and_prec)) (setq precision (cadr num_and_prec))
+                                 (setq decChar (caddr num_and_prec)) (setq old_num_str (cadddr num_and_prec))
+                                 (setq cleaned_orig (clean-mtext original_content)) (setq processed t))
+                          (progn (setq cleaned_orig "<>") (setq old_num_str "<>") (setq raw_original_content "<>") (setq processed t))))))
+                  (progn
+                    (setq raw_original_content (vl-string-trim " \t\r\n" (if raw_part raw_part "")))
+                    (setq original_content (remove-underline raw_original_content))
+                    (setq num_and_prec (extract-number-and-precision original_content))
+                    (if num_and_prec
+                      (progn (setq meas_m (car num_and_prec)) (setq precision (cadr num_and_prec))
+                             (setq decChar (caddr num_and_prec)) (setq old_num_str (cadddr num_and_prec))
+                             (setq cleaned_orig (clean-mtext original_content)) (setq processed t))
+                      (setq processed nil))))
+
+                (if (null cleaned_orig) (setq cleaned_orig ""))
+                (if (null old_num_str) (setq old_num_str ""))
+                (setq final_prefix (if (= use_prefix 1) prefix ""))
+                (setq final_suffix (if (= use_suffix 1) suffix ""))
+
+                ;; Защита от дублирования префикса/суффикса
+                (setq visible_text (clean-mtext (remove-underline (if raw_original_content raw_original_content ""))))
+                (if (and (= use_prefix 1) (> (strlen visible_text) (strlen prefix)) (= (substr visible_text 1 (strlen prefix)) prefix))
+                  (setq final_prefix ""))
+                (if (and (= use_suffix 1) (> (strlen visible_text) (strlen suffix)) (= (substr visible_text (- (strlen visible_text) (strlen suffix) -1)) suffix))
+                  (setq final_suffix ""))
+
+                ;; Применение (упрощённая версия для стабильности)
+                (if processed
+                  (progn
+                    (if (and (= mode_project 1) (/= (vl-string-trim " \t\r\n" actual_size) ""))
+                      (progn
+                        (setq is_project_mode t)
+                        (setq upper_str actual_size)
+                        (setq underline_on (and (= underline 1) (or (wcmatch (vla-get-ObjectName obj) "AcDbText,AcDbMText") (and (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension") is_dim_text_like))))
+                        (if (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
+                          (setq lower_text (strcat final_prefix "<>" final_suffix))
+                          (setq lower_text (strcat final_prefix (format-number meas_m precision decChar) final_suffix)))
+                        (setq lower_str (if underline_on (strcat "\\L" lower_text "\\l") lower_text)))
+                      (progn
+                        (setq is_project_mode nil)
+                        (setq formattedText (strcat final_prefix (calc-adjusted-value meas_m minDev maxDev 1.0 precision decChar replace_mode) final_suffix))))
+
+                    ;; Запись
+                    (cond
+                      ((wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
+                       (if is_project_mode
+                         (vla-put-TextOverride obj (strcat upper_str "\\X" lower_str))
+                         (vla-put-TextOverride obj (strcat "<>" "\\X" formattedText))))
+                      ((wcmatch (vla-get-ObjectName obj) "AcDbText,AcDbMText,AcDbMLeader*")
+                       (if (= (vla-get-ObjectName obj) "AcDbText")
+                         (setq obj (convert-text-to-mtext obj modelSpace)))
+                       (if is_project_mode
+                         (vla-put-TextString obj (strcat "\\A2;" upper_str "\\P" lower_text))
+                         (vla-put-TextString obj (strcat "\\A2;" (if (= underline 1) "\\L" "") cleaned_orig (if (= underline 1) "\\l" "") "\\P" formattedText)))))
+                    (vla-update obj)))
+
+                (setq i (1+ i)))
+              (princ "\n\nГотово! (v5.4)\n"))
+            (princ "\nОбъекты не выбраны.\n")))
+
     (progn
       (if (> dcl_id 0) (unload_dialog dcl_id))
       (if dcl_file (vl-file-delete dcl_file))
-      (princ "\nНе удалось открыть диалог.\n")
-    )
-  )
+      (princ "\nНе удалось открыть диалог.\n")))
 
-  ;; --- Завершение ---
+  ;; Завершение
   (command "UNDO" "E")
   (setvar "CMDECHO" old-cmdecho)
   (setq *error* old-error)
-  (princ)
-)
+  (princ))
 
-;; Русский алиас
+;; Алиас
 (defun c:ДПОД () (c:DPOD))
-(princ "\nDPOD v5.3 загружен! (ДПОД / DPOD)\n")
+(princ "\nDPOD v5.4 загружен! (ДПОД / DPOD) — DEBUG: (setq *DPOD-DEBUG* t)\n")
 ; SWIFT-END
