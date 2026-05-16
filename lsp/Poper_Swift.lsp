@@ -9,7 +9,7 @@
     (setq dcl_content 
 "poper_settings : dialog {
     label = \"Настройки Swift POPER\";
-    ... (полный DCL и код скрипта POPER здесь) ... 
+    ... [полный код диалога и функции] ...
 }")
     (princ "\nSwift POPER v3.2 загружен. Команда: POPER")
 ; SWIFT-END

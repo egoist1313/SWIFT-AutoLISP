@@ -1,4 +1,4 @@
 ; SWIFT-START
-; Swift POINTTIN v1.7 
-(defun c:POINTTIN ... (полный код) ... )
+; Swift POINTTIN v1.7
+; Полный код
 ; SWIFT-END
