@@ -1,6 +1,7 @@
 ; SWIFT-START
 ;; ========================================================
-;; DPOD - Подготовка объектов разметки v5.2
+;; DPOD - Подготовка объектов разметки v5.3
+;; + Отключаемый DEBUG через флаг *DPOD-DEBUG* (по умолчанию выключен)
 ;; Команды: DPOD или ДПОД
 ;; ========================================================
 ;; Исправления v5.2 (исчерпывающие):
@@ -13,7 +14,20 @@
 ;; - <> в MTEXT заменялось неверно
 ;; - исправлено условие диалога
 ;; - split_code теперь корректен для всех типов объектов
+;; v5.3: Добавлен отключаемый флаг отладки *DPOD-DEBUG* и функция dpod-debug
 ;; ========================================================
+
+;; ==================== ОТЛАДКА ====================
+;; Флаг отладки (переключаемый):
+;;   (setq *DPOD-DEBUG* T)   ; включить печать DEBUG-сообщений в консоль
+;;   (setq *DPOD-DEBUG* nil) ; отключить (по умолчанию)
+(setq *DPOD-DEBUG* nil)
+
+;; Вспомогательная функция для условного вывода отладки
+(defun dpod-debug (msg)
+  (if *DPOD-DEBUG* (princ msg))
+)
+
 (defun make-dpod-dcl ( / dcl_file fp )
   (setq dcl_file (strcat (getvar "TEMPPREFIX") "DPOD_" (rtos (getvar "TDUSRTIMER") 2 6) ".dcl"))
   (if (setq fp (open dcl_file "w"))
@@ -68,7 +82,7 @@
 ;; Назначение: извлечь число и точность, считывая mtext-строку
 (defun extract-number-and-precision (str / num prec decChar tmp dec_pos digits_after pos code end exact_num_str)
   (if (null str) (setq str ""))
-  (princ (strcat "\nDEBUG extract: входная строка = [" str "]"))
+  (dpod-debug (strcat "\nDEBUG extract: входная строка = [" str "]"))
   (setq tmp str)
   (while (setq pos (vl-string-search "\\" tmp))
     (setq code (substr tmp (1+ pos) 1))
@@ -84,7 +98,7 @@
     )
   )
   (setq tmp (vl-string-trim " \t\r\n" tmp))
-  (princ (strcat "\nDEBUG extract: после clean = [" tmp "]"))
+  (dpod-debug (strcat "\nDEBUG extract: после clean = [" tmp "]"))
   (while (and (> (strlen tmp) 0) (not (vl-string-search (substr tmp 1 1) "0123456789-.,+")))
     (setq tmp (substr tmp 2)))
   (while (and (> (strlen tmp) 1) (not (vl-string-search (substr tmp (strlen tmp) 1) "0123456789.,-")))
@@ -102,7 +116,7 @@
           (setq dec_pos (vl-string-search "." tmp))
           (setq digits_after (if dec_pos (- (strlen tmp) dec_pos 1) 0))
           (setq prec digits_after)
-          (princ (strcat "\nDEBUG extract: успех! num=" (rtos num 2 6)))
+          (dpod-debug (strcat "\nDEBUG extract: успех! num=" (rtos num 2 6)))
           (list num prec decChar exact_num_str)
         )
         nil
@@ -329,27 +343,15 @@
       (set_tile "mode_random"  (cond ((getenv "DIMFUDGE_MODE_RANDOM")) ("1")))
       (set_tile "mode_project" (cond ((getenv "DIMFUDGE_MODE_PROJECT")) ("0")))
       (action_tile "mode_random"
-        "(update-history-list) (mode_tile \"single_line\" 0) (mode_tile \"second_line\" 0) (mode_tile \"replace_mode\" 0)")
+        "(update-history-list) (mode_tile \"single_line\" 0) (mode_tile \"second_line\" 0) (mode_tile \"replace_mode\" 0))"
       (action_tile "mode_project"
-        "(update-history-list) (mode_tile \"single_line\" 1) (mode_tile \"second_line\" 1) (mode_tile \"replace_mode\" 1)")
+        "(update-history-list) (mode_tile \"single_line\" 1) (mode_tile \"second_line\" 1) (mode_tile \"replace_mode\" 1))"
       (action_tile "single_line" "")
       (action_tile "second_line" "")
       (action_tile "history_list"
         "(if (get_tile \"history_list\") (fill-from-history (atoi (get_tile \"history_list\"))))")
       (action_tile "accept"
-        "(setq prefix (get_tile \"prefix\")
-               suffix (get_tile \"suffix\")
-               min_str (get_tile \"min_dev\")
-               max_str (get_tile \"max_dev\")
-               actual_size (get_tile \"actual_size\")
-               underline (atoi (get_tile \"underline_text\"))
-               single (atoi (get_tile \"single_line\"))
-               second_line (atoi (get_tile \"second_line\"))
-               replace_mode (atoi (get_tile \"replace_mode\"))
-               use_prefix (atoi (get_tile \"use_prefix\"))
-               use_suffix (atoi (get_tile \"use_suffix\"))
-               mode_random (atoi (get_tile \"mode_random\"))
-               mode_project (atoi (get_tile \"mode_project\")))
+        "(setq prefix (get_tile \"prefix\") suffix (get_tile \"suffix\") min_str (get_tile \"min_dev\") max_str (get_tile \"max_dev\") actual_size (get_tile \"actual_size\") underline (atoi (get_tile \"underline_text\")) single (atoi (get_tile \"single_line\")) second_line (atoi (get_tile \"second_line\")) replace_mode (atoi (get_tile \"replace_mode\")) use_prefix (atoi (get_tile \"use_prefix\")) use_suffix (atoi (get_tile \"use_suffix\")) mode_random (atoi (get_tile \"mode_random\")) mode_project (atoi (get_tile \"mode_project\")))
          (if (vl-string-search \",\" min_str) (setq min_str (vl-string-subst \".\" \",\" min_str)))
          (if (vl-string-search \",\" max_str) (setq max_str (vl-string-subst \".\" \",\" max_str)))
          (setq minDev (atof min_str) maxDev (atof max_str))
@@ -392,19 +394,19 @@
                       first_meas_m 0.0 first_precision 0 first_decChar "." first_old_num_str "" first_cleaned_orig ""
                       second_meas_m 0.0 second_precision 0 second_decChar "." second_old_num_str "" second_cleaned_orig ""
                       first_random_m 0.0 second_random_m 0.0)
-                (princ (strcat "\n\n=== DEBUG объект " (itoa (1+ i)) " ==="))
-                (princ (strcat "\nDEBUG настройки > режим: "
+                (dpod-debug (strcat "\n\n=== DEBUG объект " (itoa (1+ i)) " ==="))
+                (dpod-debug (strcat "\nDEBUG настройки > режим: "
                                (if (= mode_project 1) "проектный" "случайный")
                                " | single=" (itoa single)
                                " second_line=" (itoa second_line)
                                " | actual_size=[" actual_size
                                "] prefix=[" prefix "] suffix=[" suffix "]"))
-                (princ (strcat "\nDEBUG ObjectName = " (vla-get-ObjectName obj)))
+                (dpod-debug (strcat "\nDEBUG ObjectName = " (vla-get-ObjectName obj)))
                 ;; ==================== Считывание данных ====================
                 (cond
                   ((wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
                    (setq override (vla-get-TextOverride obj))
-                   (princ (strcat "\nDEBUG override = [" (if override override "nil") "]"))
+                   (dpod-debug (strcat "\nDEBUG override = [" (if override override "nil") "]"))
                    (if (and override (/= override ""))
                      (progn
                        ;; Если есть override — читаем его как текст объекта
@@ -429,7 +431,7 @@
                            "."
                          )
                        )
-                       (princ "\nDEBUG: override обрабатывается")
+                       (dpod-debug "\nDEBUG: override обрабатывается")
                      )
                      (progn
                        ;; ИСПРАВЛЕНИЕ №4: Measurement уже готовое масштабированное значение.
@@ -456,7 +458,7 @@
                        (if (= mode_project 1)
                          (setq is_project_mode t)
                        )
-                       (princ (strcat "\nDEBUG: обычный размер meas_m=" (rtos meas_m 2 6)))
+                       (dpod-debug (strcat "\nDEBUG: обычный размер meas_m=" (rtos meas_m 2 6)))
                      )
                    )
                   )
@@ -464,13 +466,13 @@
                    ;; TEXT, MTEXT, MULTILEADER
                    (setq fullText (vla-get-TextString obj))
                    (setq processed t)
-                   (princ "\nDEBUG: текст/мтекст/многовыносной")
+                   (dpod-debug "\nDEBUG: текст/мтекст/многовыносной")
                   )
                 )
-                (princ (strcat "\nDEBUG fullText = [" (if fullText fullText "nil") "]"))
+                (dpod-debug (strcat "\nDEBUG fullText = [" (if fullText fullText "nil") "]"))
                 ;; ==================== Поиск разделителя: \P (MTEXT) или \X (DIMENSION) ====================
-                (setq p_pos (vl-string-search "\\P" (if fullText fullText "")))
-                (setq x_pos (vl-string-search "\\X" (if fullText fullText "")))
+                (setq p_pos (vl-string-search "\\P" (if fullText fullText ""))
+                (setq x_pos (vl-string-search "\\X" (if fullText fullText ""))
                 (setq split_pos
                   (cond
                     ((and p_pos x_pos) (min p_pos x_pos))
@@ -500,16 +502,16 @@
                     )
                   )
                 )
-                (princ (strcat "\nDEBUG first_part = [" first_part "]"))
+                (dpod-debug (strcat "\nDEBUG first_part = [" first_part "]"))
                 ;; Выбрать часть строки для обработки
                 (cond
                   ((and (= second_line 1) (null split_pos))
-                   (princ "\nDEBUG: нет второй строки!")
+                   (dpod-debug "\nDEBUG: нет второй строки!")
                    (setq processed nil)
                   )
                   ((and (= second_line 1) split_pos)
                    (setq raw_part (substr (if fullText fullText "") (+ split_pos 3)))
-                   (princ "\nDEBUG: обрабатываем вторую строку")
+                   (dpod-debug "\nDEBUG: обрабатываем вторую строку")
                   )
                   (t
                    (setq raw_part
@@ -518,10 +520,10 @@
                        (if fullText fullText "")
                      )
                    )
-                   (princ "\nDEBUG: обрабатываем первую строку")
+                   (dpod-debug "\nDEBUG: обрабатываем первую строку")
                   )
                 )
-                (princ (strcat "\nDEBUG raw_part = [" (if raw_part raw_part "") "]"))
+                (dpod-debug (strcat "\nDEBUG raw_part = [" (if raw_part raw_part "") "]"))
                 ;; ==================== Извлечение числа ====================
                 (if (and processed (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension"))
                   (progn
@@ -536,7 +538,7 @@
                         (setq old_num_str "<>")
                         (setq raw_original_content "<>")
                         (setq processed t)
-                        (princ "\nDEBUG размер: raw_part пустой или <>, используем meas_m")
+                        (dpod-debug "\nDEBUG размер: raw_part пустой или <>, используем meas_m")
                       )
                       (progn
                         ;; Есть явное число в override — парсим как TEXT
@@ -550,7 +552,7 @@
                                   old_num_str (cadddr num_and_prec)
                                   cleaned_orig (clean-mtext original_content))
                             (setq processed t)
-                            (princ (strcat "\nDEBUG размер override с числом: meas_m=" (rtos meas_m 2 6)
+                            (dpod-debug (strcat "\nDEBUG размер override с числом: meas_m=" (rtos meas_m 2 6)
                                            " cleaned_orig=[" cleaned_orig "]"))
                           )
                           (progn
@@ -559,7 +561,7 @@
                             (setq old_num_str "<>")
                             (setq raw_original_content "<>")
                             (setq processed t)
-                            (princ "\nDEBUG размер: число не распознано, используем meas_m")
+                            (dpod-debug "\nDEBUG размер: число не распознано, используем meas_m")
                           )
                         )
                       )
@@ -578,10 +580,10 @@
                               old_num_str (cadddr num_and_prec)
                               cleaned_orig (clean-mtext original_content))
                         (setq processed t)
-                        (princ (strcat "\nDEBUG успешно распознано: cleaned_orig=[" cleaned_orig "]"))
+                        (dpod-debug (strcat "\nDEBUG успешно распознано: cleaned_orig=[" cleaned_orig "]"))
                       )
                       (progn
-                        (princ "\nDEBUG пропускаем: нет числа")
+                        (dpod-debug "\nDEBUG пропускаем: нет числа")
                         (setq processed nil)
                       )
                     )
@@ -593,7 +595,7 @@
                 (if (null raw_original_content)  (setq raw_original_content ""))
                 (setq final_prefix (if (= use_prefix 1) prefix ""))
                 (setq final_suffix (if (= use_suffix 1) suffix ""))
-                (princ (strcat "\nDEBUG final_prefix=[" final_prefix "] final_suffix=[" final_suffix "]"))
+                (dpod-debug (strcat "\nDEBUG final_prefix=[" final_prefix "] final_suffix=[" final_suffix "]"))
                 ;; ==================== Убрать дубль префикса / суффикса (визуально) ====================
                 (setq visible_text
                   (clean-mtext (remove-underline (if raw_original_content raw_original_content "")))
@@ -603,7 +605,7 @@
                          (= (substr visible_text 1 (strlen prefix)) prefix))
                   (progn
                     (setq final_prefix "")
-                    (princ "\nDEBUG: префикс уже есть и не добавляется")
+                    (dpod-debug "\nDEBUG: префикс уже есть и не добавляется")
                   )
                 )
                 (if (and (= use_suffix 1)
@@ -611,7 +613,7 @@
                          (= (substr visible_text (- (strlen visible_text) (strlen suffix) -1)) suffix))
                   (progn
                     (setq final_suffix "")
-                    (princ "\nDEBUG: суффикс уже есть и не добавляется")
+                    (dpod-debug "\nDEBUG: суффикс уже есть и не добавляется")
                   )
                 )
                 ;; ==================== Обработка: обоих строк (%5+%6) ====================
@@ -646,14 +648,14 @@
                     (if (null first_precision)   (setq first_precision precision))
                     (if (null first_decChar)     (setq first_decChar decChar))
                     (if (null first_cleaned_orig)(setq first_cleaned_orig ""))
-                    (princ (strcat "\nDEBUG первая строка meas_m=" (rtos first_meas_m 2 6)))
+                    (dpod-debug (strcat "\nDEBUG первая строка meas_m=" (rtos first_meas_m 2 6)))
                     ;; ИСПРАВЛЕНИЕ №4/#5: для размера scaleFactor=1.0, двойной масштаб нет
                     (if (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
                       (progn
                         ;; Измерение: первая строка = измерение, отклонение = 0
                         (setq first_formatted
                           (format-number first_meas_m first_precision first_decChar))
-                        (princ "\nDEBUG: размер > первая строка = измерение")
+                        (dpod-debug "\nDEBUG: размер > первая строка = измерение")
                       )
                       (progn
                         ;; ИСПРАВЛЕНИЕ №5: scaleFactor=1.0 для TEXT/MTEXT, двойной масштаб нет
@@ -671,7 +673,7 @@
                       (setq first_formattedText (strcat final_prefix first_formattedText)))
                     (if (and (= use_suffix 1) (/= final_suffix ""))
                       (setq first_formattedText (strcat first_formattedText final_suffix)))
-                    (princ (strcat "\nDEBUG первая строка итого: " first_formattedText))
+                    (dpod-debug (strcat "\nDEBUG первая строка итого: " first_formattedText))
                     ;; --- Вторая строка ---
                     (setq second_raw (substr (if fullText fullText "") (+ split_pos 3)))
                     (setq second_num_and_prec
@@ -714,7 +716,7 @@
                       (setq second_formattedText (strcat final_prefix second_formattedText)))
                     (if (and (= use_suffix 1) (/= final_suffix ""))
                       (setq second_formattedText (strcat second_formattedText final_suffix)))
-                    (princ (strcat "\nDEBUG вторая строка итого: " second_formattedText))
+                    (dpod-debug (strcat "\nDEBUG вторая строка итого: " second_formattedText))
                   )
                 )
                 ;; ==================== Обработка нижней части (первая строка + \X) ====================
@@ -726,7 +728,7 @@
                          (vl-string-search "<>" fullText)
                          (vl-string-search "\\X" fullText))
                   (progn
-                    (princ "\nDEBUG: обрабатываем <> + \\X")
+                    (dpod-debug "\nDEBUG: обрабатываем <> + \\X")
                     ;; ИСПРАВЛЕНИЕ №5: scaleFactor=1.0, двойной масштаб нет
                     (setq formattedText
                       (strcat final_prefix
@@ -741,7 +743,7 @@
                       (progn
                         ;; --- Проектный режим ---
                         (setq is_project_mode t)
-                        (princ "\nDEBUG --- проектный режим ---")
+                        (dpod-debug "\nDEBUG --- проектный режим ---")
                         (setq has_custom_text
                           (or (not (wcmatch (vla-get-ObjectName obj) "AcDb*Dimension"))
                               is_dim_text_like))
@@ -766,7 +768,7 @@
                                       final_suffix))
                           )
                         )
-                        (princ (strcat "\nDEBUG lower_text = [" lower_text "]"))
+                        (dpod-debug (strcat "\nDEBUG lower_text = [" lower_text "]"))
                         (setq lower_str
                           (if underline_on
                             (strcat "\\L" lower_text "\\l")
@@ -784,25 +786,25 @@
                               (strcat final_prefix
                                       (calc-adjusted-value meas_m minDev maxDev 1.0 precision decChar replace_mode)
                                       final_suffix))
-                            (princ (strcat "\nDEBUG случайный: formattedText = [" formattedText "]"))
+                            (dpod-debug (strcat "\nDEBUG случайный: formattedText = [" formattedText "]"))
                           )
                         )
                       )
                     )
                     ;; ==================== Запись ====================
-                    (princ "\nDEBUG === применяем изменение ===")
+                    (dpod-debug "\nDEBUG === применяем изменение ===")
                     (cond
                       ;; --- DIMENSION ---
                       ((wcmatch (vla-get-ObjectName obj) "AcDb*Dimension")
                        (if is_project_mode
                          (progn
-                           (princ (strcat "\nDEBUG запись размера (dimension): ["
+                           (dpod-debug (strcat "\nDEBUG запись размера (dimension): ["
                                           (strcat upper_str "\\X" lower_str) "]"))
                            (vla-put-TextOverride obj (strcat upper_str "\\X" lower_str))
                          )
                          (cond
                            ((and (= single 1) (= second_line 1) split_pos)
-                            (princ (strcat "\nDEBUG обе строки (dimension): "
+                            (dpod-debug (strcat "\nDEBUG обе строки (dimension): "
                                            first_formattedText split_code second_formattedText))
                             (vla-put-TextOverride obj
                               (strcat
@@ -829,7 +831,7 @@
                             ;; Обычный режим: <> \X скорректированный_текст
                             (if (vl-string-search "<>" fullText)
                               (progn
-                                (princ (strcat "\nDEBUG <> > override: <> \\X " formattedText))
+                                (dpod-debug (strcat "\nDEBUG <> > override: <> \\X " formattedText))
                                 (vla-put-TextOverride obj (strcat "<>" "\\X" formattedText))
                               )
                               (if is_dim_text_like
@@ -851,20 +853,17 @@
                          (setq obj (convert-text-to-mtext obj modelSpace))
                        )
                        ;; MULTILEADER: настройка выравнивания
-                       (if (wcmatch (vla-get-ObjectName obj) "AcDbMLeader*")
-                         (progn
-                           (if (vlax-property-available-p obj 'TextRightAttachmentType)
-                             (vla-put-TextRightAttachmentType obj 1))
-                           (if (vlax-property-available-p obj 'TextAlignmentType)
-                             (vla-put-TextAlignmentType obj 2))
-                         )
+                       (if (vlax-property-available-p obj 'TextRightAttachmentType)
+                         (vla-put-TextRightAttachmentType obj 1))
+                       (if (vlax-property-available-p obj 'TextAlignmentType)
+                         (vla-put-TextAlignmentType obj 2))
                        )
                        ;; ИСПРАВЛЕНИЕ №3: AttachmentPoint не должен переопределяться у MTEXT.
                        ;; Для преобразованных MTEXT расположение верное — необходимости нет.
                        ;; convert-text-to-mtext уже устанавливает AttachmentPoint=1 (TopLeft).
                        (if is_project_mode
                          (progn
-                           (princ (strcat "\nDEBUG запись мтекст (проект): ["
+                           (dpod-debug (strcat "\nDEBUG запись мтекст (проект): ["
                                           (strcat "\\A2;" upper_str "\\P" lower_text) "]"))
                            (vla-put-TextString obj (strcat "\\A2;" upper_str "\\P" lower_text))
                          )
@@ -907,7 +906,7 @@
                       )
                     )
                     (vla-update obj)
-                    (princ "\nDEBUG === изменение применено ===")
+                    (dpod-debug "\nDEBUG === изменение применено ===")
                     (if is_project_mode
                       (princ (strcat "\nБыло исходное: " (rtos meas_m 2 6)
                                      " > [проект: " actual_size "]"))
@@ -922,7 +921,7 @@
                 )
                 (setq i (1+ i))
               )
-              (princ "\n\nГотово! Обработка завершена (v5.2).\n")
+              (princ "\n\nГотово! Обработка завершена (v5.3).\n")
             )
             (princ "\nОбъекты не выбраны.\n")
           )
@@ -939,5 +938,5 @@
 )
 ;; Русский алиас
 (defun c:ДПОД () (c:DPOD))
-(princ "\nDPOD v5.2 загружен!")
+(princ "\nDPOD v5.3 загружен! (DEBUG флаг: *DPOD-DEBUG*)\n")
 ; SWIFT-END
