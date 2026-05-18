@@ -1,24 +1,15 @@
 ; SWIFT-START
 ; ================================================
-; Swift POPER v3.5 — ПОЛНЫЙ АССОЦИАТИВНЫЙ ИНСТРУМЕНТ (ФИКС stringp nil в reactor)
-; Полная реализация требований пользователя:
-; 1. Три режима (По точкам / По векторам / По вершинам полилинии)
-; 2. Всё связано через XData (POPER_ID = handle главной полилинии)
-; 3. Настройки сохраняются в XData главной полилинии
-; 4. Object Reactor — мгновенное обновление при grip/stretch/move/PEDIT
-; 5. POPERUPDATE — резервная команда
-; 6. Автовосстановление после перезагрузки чертежа
-; 7. Точки в режиме "По точкам" — слой PoperSwift_Source, никогда не удаляются
+; Swift POPER v3.5 — ПОЛНЫЙ АССОЦИАТИВНЫЙ ИНСТРУМЕНТ (ФИКС неверная DXF-группа + сохранение настроек toggle)
 ; ================================================
-; ФИКС: "неверный тип аргумента: stringp nil" в poper-full-update при stretch
-;   • Добавлены проверки nil / numberp перед nth, rtos, vla-put-textstring
-;   • Используется vl-catch-all-apply для безопасного обновления каждой аннотации
-;   • Улучшено получение coords через poper-get-sorted-coords (сортировка по X для соответствия индексам)
-;   • Улучшена poper-xdata-set — удаляет только XData этого приложения (не все -3)
-;   • Полный код без сокращений
-;   • Сразу отредактировано и закоммичено в main
+; ФИКС: "неверная DXF-группа: (10 x nil 0.0)"
+;   • В action_tile accept НЕ сохранялись в getenv ZZ_SHOW_LENGTHS / ZZ_SHOW_SLOPES / ZZ_DRAW_PROJECTIONS / ZZ_SHOW_PERMILLE_SIGN
+;   • Из-за этого toggle "Показать длины: Нет" игнорировался → входил в if show_lengths → (cadr nil) при создании линий/текстов
+;   • Добавлены setenv внутри accept + while (null) для top/bottom length/slope (как для height)
+;   • Дополнительные проверки nil в блоках создания длин/уклонов
+; Полный код без сокращений
 ; ================================================
-; Commit: v3.5-reactor-stringp-nil-fix-safe-update (текущая ветка main)
+; Commit: v3.5-dxf-group-nil-fix-toggle-save (main)
 ; ================================================
 
 (vl-load-com)
@@ -108,14 +99,16 @@ poper_help : dialog {
 )
 
 (defun create-line (x1 y1 x2 y2 color)
-    (entmake
-        (list
-            '(0 . "LINE")
-            '(100 . "AcDbEntity")
-            '(100 . "AcDbLine")
-            (cons 10 (list x1 y1 0.0))
-            (cons 11 (list x2 y2 0.0))
-            (cons 62 color)
+    (if (and (numberp x1) (numberp y1) (numberp x2) (numberp y2))
+        (entmake
+            (list
+                '(0 . "LINE")
+                '(100 . "AcDbEntity")
+                '(100 . "AcDbLine")
+                (cons 10 (list x1 y1 0.0))
+                (cons 11 (list x2 y2 0.0))
+                (cons 62 color)
+            )
         )
     )
 )
@@ -185,17 +178,15 @@ poper_help : dialog {
   )
 )
 
-(defun poper-xdata-set (ename data / ed xd app-xdata)
+(defun poper-xdata-set (ename data / ed xd)
   (poper-regapp)
   (setq ed (entget ename (list *SWIFT_POPER_APPNAME*)))
-  ; Удалить ТОЛЬКО XData этого приложения (не все -3 !)
   (setq ed 
     (vl-remove-if 
       '(lambda (x) 
          (and (= (car x) -3)
               (assoc *SWIFT_POPER_APPNAME* (cdr x))))
       ed))
-  ; Сериализовать data в строку и записать как один код 1000
   (setq xd (cons -3 (list (list *SWIFT_POPER_APPNAME* (cons 1000 (vl-prin1-to-string data))))))
   (entmod (append ed (list xd)))
 )
@@ -279,7 +270,7 @@ poper_help : dialog {
   )
 )
 
-;; ====================== ПОЛНОЕ ОБНОВЛЕНИЕ (БЕЗОПАСНАЯ ВЕРСИЯ) ======================
+;; ====================== ПОЛНОЕ ОБНОВЛЕНИЕ ======================
 (defun poper-full-update (poper-id / profile-ename xd-settings coords sorted-coords heights i pt final-height
                           all-objects xd obj-type obj-index obj-en text-obj
                           pt1 pt2 delta-x delta-y delta-x-scaled delta-y-scaled slope-permille slope-text
@@ -302,7 +293,6 @@ poper_help : dialog {
   (setq OSZ (or (cdr (assoc 'OSZ xd-settings)) '(0.0 0.0 0.0)))
   (setq OSH (or (cdr (assoc 'OSH xd-settings)) 0.0))
 
-  ;; Получаем координаты через vlax-get (flat list) и сортируем по X (соответствует логике индексов при создании)
   (setq obj (vlax-ename->vla-object profile-ename))
   (setq coords (vlax-get obj 'Coordinates))
   (setq sorted-coords (if coords (poper-get-sorted-coords coords) '()))
@@ -407,7 +397,6 @@ poper_help : dialog {
            )
           )
           ((equal obj-type "TICK")
-           ;; TICK lines currently not fully associative (top/bottom points not stored). Just regen once.
            (if (not (member "REGEN" (or *poper-tick-regen* '())))
              (progn 
                (command-s "_.REGEN")
@@ -419,7 +408,7 @@ poper_help : dialog {
       )
     )
   )
-  (setq *poper-tick-regen* nil) ; reset for next call
+  (setq *poper-tick-regen* nil)
   (princ (strcat "\n[POPER v3.5] Полное обновление завершено для POPER_ID " poper-id))
   (princ)
 )
@@ -482,7 +471,7 @@ poper_help : dialog {
     (poper-regapp)
     (poper-setup-layers)
 
-    ;; ====================== *error* handler (упрощённый — без vl-push-error-using-command) ======================
+    ;; *error* handler
     (setq old-env (list (getvar "CMDECHO") (getvar "REGENMODE") (getvar "OSMODE") (getvar "HIGHLIGHT") (getvar "BLIPMODE") (getvar "CLAYER")))
     (setq old-error *error*)
     (defun *error* (msg)
@@ -498,7 +487,7 @@ poper_help : dialog {
         (princ)
     )
 
-    ;; ====================== DCL ======================
+    ;; DCL
     (setq temp_dcl (vl-filename-mktemp "poper" (getvar "TEMPPREFIX") ".dcl"))
     (setq fp (open temp_dcl "w"))
     (write-line dcl_content fp)
@@ -510,7 +499,7 @@ poper_help : dialog {
         (progn (princ "\nОшибка загрузки DCL.") (if (and *poper-dcl* (findfile *poper-dcl*)) (vl-file-delete *poper-dcl*)) (exit))
     )
 
-    ;; Инициализация getenv
+    ;; getenv init
     (if (null (getenv "ZZ_MODE")) (setenv "ZZ_MODE" "points"))
     (if (null (getenv "ZZ_H_SCALE")) (setenv "ZZ_H_SCALE" "10"))
     (if (null (getenv "ZZ_L_SCALE")) (setenv "ZZ_L_SCALE" "1"))
@@ -554,36 +543,36 @@ poper_help : dialog {
                   ((= mode_vectors \"1\") (setenv \"ZZ_MODE\" \"vectors\"))
                   ((= mode_polyline \"1\") (setenv \"ZZ_MODE\" \"polyline\")))
             (setq h_scale (get_tile \"h_scale\"))
-            (if (or (<= (atof h_scale) 0) (not (numberp (atof h_scale))))
-                (progn (alert \"Масштаб по высоте должен быть положительным числом!\") (exit)))
+            (if (or (<= (atof h_scale) 0) (not (numberp (atof h_scale)))) (progn (alert \"Масштаб по высоте должен быть положительным числом!\") (exit)))
             (setq l_scale (get_tile \"l_scale\"))
-            (if (or (<= (atof l_scale) 0) (not (numberp (atof l_scale))))
-                (progn (alert \"Масштаб по длине должен быть положительным числом!\") (exit)))
+            (if (or (<= (atof l_scale) 0) (not (numberp (atof l_scale)))) (progn (alert \"Масштаб по длине должен быть положительным числом!\") (exit)))
             (setq text_height (get_tile \"text_height\"))
-            (if (or (<= (atof text_height) 0) (not (numberp (atof text_height))))
-                (progn (alert \"Высота текста должна быть положительным числом!\") (exit)))
+            (if (or (<= (atof text_height) 0) (not (numberp (atof text_height)))) (progn (alert \"Высота текста должна быть положительным числом!\") (exit)))
             (setq text_offset_str (get_tile \"text_offset\"))
-            (if (or (< (atof text_offset_str) 0) (> (atof text_offset_str) 100) (not (numberp (atof text_offset_str))))
-                (progn (alert \"Отступ текста должен быть числом от 0 до 100%!\") (exit)))
+            (if (or (< (atof text_offset_str) 0) (> (atof text_offset_str) 100) (not (numberp (atof text_offset_str)))) (progn (alert \"Отступ текста должен быть числом от 0 до 100%!\") (exit)))
             (setq round_to_index (atoi (get_tile \"round_to\")))
-            (if (not (member round_to_index '(0 1)))
-                (progn (alert \"Некорректное значение округления высоты. Установлено значение по умолчанию (2).\") (setq round_to_index 0)))
+            (if (not (member round_to_index '(0 1))) (progn (alert \"Некорректное значение округления высоты. Установлено 2.\") (setq round_to_index 0)))
             (setq round_to (nth round_to_index '(\"2\" \"3\")))
             (setq slope_round_to (get_tile \"slope_round_to\"))
-            (if (not (member (atoi slope_round_to) '(0 1 2)))
-                (progn (alert \"Некорректное значение округления уклона. Установлено значение по умолчанию (0).\") (setq slope_round_to \"0\")))
+            (if (not (member (atoi slope_round_to) '(0 1 2))) (progn (alert \"Некорректное округление уклона. Установлено 0.\") (setq slope_round_to \"0\")))
             (setq slope_unit_index (atoi (get_tile \"slope_unit\")))
-            (if (not (member slope_unit_index '(0 1 2 3)))
-                (progn (alert \"Некорректная единица уклона. Установлено значение по умолчанию (Промилле).\") (setq slope_unit_index 0)))
+            (if (not (member slope_unit_index '(0 1 2 3))) (progn (alert \"Некорректная единица уклона. Установлено permille.\") (setq slope_unit_index 0)))
             (setq slope_unit (nth slope_unit_index '(\"permille\" \"degrees\" \"ratio\" \"auto\")))
             (setq projection_color (atoi (get_tile \"projection_color\")))
-            (if (not (member projection_color '(0 1 2 3 4)))
-                (progn (alert \"Некорректный цвет линий проекции. Установлено значение по умолчанию (По слою).\") (setq projection_color 0)))
+            (if (not (member projection_color '(0 1 2 3 4))) (progn (alert \"Некорректный цвет проекции. Установлено По слою.\") (setq projection_color 0)))
             (setq use_text_height (get_tile \"use_text_height\"))
             (setq show_lengths (get_tile \"show_lengths\"))
             (setq show_slopes (get_tile \"show_slopes\"))
             (setq draw_projections (get_tile \"draw_projections\"))
             (setq show_permille_sign (get_tile \"show_permille_sign\"))
+
+            ;; ВАЖНО: сохраняем ВСЕ toggle и color в getenv (раньше отсутствовало!)
+            (setenv "ZZ_SHOW_LENGTHS" show_lengths)
+            (setenv "ZZ_SHOW_SLOPES" show_slopes)
+            (setenv "ZZ_DRAW_PROJECTIONS" draw_projections)
+            (setenv "ZZ_PROJECTION_COLOR" (itoa projection_color))
+            (setenv "ZZ_SHOW_PERMILLE_SIGN" show_permille_sign)
+
             (done_dialog 1)
         )"
     )
@@ -592,13 +581,11 @@ poper_help : dialog {
 
     (setq result (start_dialog))
     (unload_dialog dcl_id)
-    (if (and *poper-dcl* (findfile *poper-dcl*))
-        (vl-file-delete *poper-dcl*)
-    )
+    (if (and *poper-dcl* (findfile *poper-dcl*)) (vl-file-delete *poper-dcl*))
 
     (if (= result 1)
         (progn
-            ;; БЕЗОПАСНОЕ ПРИСВАИВАНИЕ
+            ;; Читаем свежие значения (теперь корректно сохранённые)
             (setq h_scale (if (getenv "ZZ_H_SCALE") (getenv "ZZ_H_SCALE") "10"))
             (setq l_scale (if (getenv "ZZ_L_SCALE") (getenv "ZZ_L_SCALE") "1"))
             (setq text_height (if (getenv "ZZ_TEXT_HEIGHT") (getenv "ZZ_TEXT_HEIGHT") "2.5"))
@@ -672,10 +659,7 @@ poper_help : dialog {
                     (prompt "\nВыберите текстовый объект с высотой: ")
                     (while (progn
                             (setq text_entity (entsel))
-                            (if text_entity
-                                (not (member (cdr (assoc 0 (entget (car text_entity)))) '("TEXT" "MTEXT")))
-                                t
-                            )
+                            (if text_entity (not (member (cdr (assoc 0 (entget (car text_entity)))) '("TEXT" "MTEXT"))) t)
                           )
                         (princ "\nВыбранный объект не является текстом. Пожалуйста, выберите TEXT или MTEXT."))
                     (if (null text_entity) (progn (princ "\nТекстовый объект не выбран.") (exit)))
@@ -699,7 +683,6 @@ poper_help : dialog {
             (setq all-created-ents '())
 
             (cond
-                ;; Режим: По точкам
                 ((= mode_points "1")
                     (setq temp_points '())
                     (prompt "\nУкажите точки профиля (Enter для завершения, 'U' для отмены последней точки)")
@@ -749,7 +732,6 @@ poper_help : dialog {
                     )
                 )
 
-                ;; Режим: По векторам
                 ((= mode_vectors "1")
                     (prompt "\nВыберите вертикальные объекты: ")
                     (setq selected_entities (ssget))
@@ -773,9 +755,7 @@ poper_help : dialog {
                         (setq x_coord (car start_pt))
                         (setq is_duplicate nil)
                         (foreach existing_x x_coords
-                            (if (< (abs (- x_coord existing_x)) 0.01)
-                                (setq is_duplicate t)
-                            )
+                            (if (< (abs (- x_coord existing_x)) 0.01) (setq is_duplicate t))
                         )
                         (if (not is_duplicate)
                             (progn
@@ -828,7 +808,6 @@ poper_help : dialog {
                     )
                 )
 
-                ;; Режим: По вершинам полилинии
                 ((= mode_polyline "1")
                     (while (null profile_polyline)
                         (prompt "\nВыберите полилинию профиля: ")
@@ -905,18 +884,13 @@ poper_help : dialog {
             )
 
             (if (< point_count 1)
-                (progn
-                    (princ "\nОшибка: Не выбрано ни одной точки для построения профиля.")
-                    (command "_.UNDO" "_End")
-                    (exit)
-                )
+                (progn (princ "\nОшибка: Не выбрано ни одной точки для построения профиля.") (command "_.UNDO" "_End") (exit))
             )
 
             (if (and draw_projections (or (= mode_points "1") (= mode_polyline "1")))
                 (progn
                     (prompt "\nУкажите точку для линий проекции на оси X: ")
-                    (while (null (setq projection_point (getpoint)))
-                        (princ "\nТочка не выбрана."))
+                    (while (null (setq projection_point (getpoint))) (princ "\nТочка не выбрана."))
                     (setq line_color (if (= mode_polyline "1") (vlax-get (vlax-ename->vla-object profile_polyline) 'Color) (if (= projection_color 0) 256 projection_color)))
                     (foreach pt original_PCoords
                         (create-line (car pt) (cadr pt) (car pt) (cadr projection_point) line_color)
@@ -927,11 +901,11 @@ poper_help : dialog {
                 )
             )
 
+            ;; Высота текста — с защитой
             (prompt "\nУкажите верх и низ строки для размещения текста высоты")
-            (while (null (setq top_point_height (getpoint "\nУкажите верхнюю точку строки для высоты: ")))
-                (princ "\nВерхняя точка не выбрана."))
-            (while (null (setq bottom_point_height (getpoint "\nУкажите нижнюю точку строки для высоты: ")))
-                (princ "\nНижняя точка не выбрана."))
+            (while (null (setq top_point_height (getpoint "\nУкажите верхнюю точку строки для высоты: "))) (princ "\nВерхняя точка не выбрана."))
+            (while (null (setq bottom_point_height (getpoint "\nУкажите нижнюю точку строки для высоты: "))) (princ "\nНижняя точка не выбрана."))
+
             (setq sorted_PCoords (vl-sort PCoords '(lambda (a b) (< (car a) (car b)))))
             (setq sorted_heights (mapcar '(lambda (pt) (nth (vl-position pt PCoords) heights)) sorted_PCoords))
 
@@ -941,15 +915,14 @@ poper_help : dialog {
             (while (< i (length sorted_PCoords))
                 (setq pt (nth i sorted_PCoords))
                 (if (< (- (car pt) prev_x) text_height)
-                    (setq pt (list (+ prev_x text_height) (cadr pt) 0.0))
-                )
+                    (setq pt (list (+ prev_x text_height) (cadr pt) 0.0)))
                 (setq new_PCoords (append new_PCoords (list pt)))
                 (setq prev_x (car pt))
                 (setq i (1+ i))
             )
             (setq PCoords new_PCoords)
 
-            ;; Тексты высот
+            ;; HEIGHT тексты
             (setq i 0)
             (while (< i (length PCoords))
                 (setq pt (nth i PCoords))
@@ -962,12 +935,12 @@ poper_help : dialog {
                 (setq i (1+ i))
             )
 
-            ;; Тексты длин + вертикальные линии
+            ;; ДЛИНЫ (теперь с защитой nil и while)
             (if (and show_lengths (> point_count 0))
                 (progn
                     (prompt "\nУкажите верх и низ строки для размещения текста длины")
-                    (setq top_point_length (getpoint "\nУкажите верхнюю точку строки для длины: ")))
-                    (setq bottom_point_length (getpoint "\nУкажите нижнюю точку строки для длины: ")))
+                    (while (null (setq top_point_length (getpoint "\nУкажите верхнюю точку строки для длины: "))) (princ "\nВерхняя точка не выбрана."))
+                    (while (null (setq bottom_point_length (getpoint "\nУкажите нижнюю точку строки для длины: "))) (princ "\nНижняя точка не выбрана."))
                     (setq sorted_PCoords (vl-sort original_PCoords '(lambda (a b) (< (car a) (car b)))))
                     (setq i 0)
                     (foreach pt sorted_PCoords
@@ -993,10 +966,7 @@ poper_help : dialog {
                                     (progn
                                         (setq text_angle 1.5708)
                                         (if (< (- (car pt) prev_x) text_height)
-                                            (progn
-                                                (setq text_angle 0)
-                                                (setq mid_height (- (cadr bottom_point_length) text_height 0.01))
-                                            )
+                                            (progn (setq text_angle 0) (setq mid_height (- (cadr bottom_point_length) text_height 0.01)))
                                         )
                                     )
                                 )
@@ -1012,12 +982,12 @@ poper_help : dialog {
                 )
             )
 
-            ;; Тексты уклонов + наклонные линии
+            ;; УКЛОНЫ (с защитой)
             (if (and show_slopes (> point_count 1))
                 (progn
                     (prompt "\nУкажите верх и низ строки для размещения текста уклона")
-                    (setq top_point_slope (getpoint "\nУкажите верхнюю точку строки для уклона: ")))
-                    (setq bottom_point_slope (getpoint "\nУкажите нижнюю точку строки для уклона: ")))
+                    (while (null (setq top_point_slope (getpoint "\nУкажите верхнюю точку строки для уклона: "))) (princ "\nВерхняя точка не выбрана."))
+                    (while (null (setq bottom_point_slope (getpoint "\nУкажите нижнюю точку строки для уклона: "))) (princ "\nНижняя точка не выбрана."))
                     (setq sorted_PCoords (vl-sort original_PCoords '(lambda (a b) (< (car a) (car b)))))
                     (setq i 0)
                     (foreach pt sorted_PCoords
@@ -1042,9 +1012,7 @@ poper_help : dialog {
                                         (setq slope_permille (* (/ (abs delta_y_scaled) delta_x_scaled) 1000))
                                         (cond
                                             ((eq slope_unit "permille")
-                                             (setq slope_text (if show_permille_sign
-                                                                 (strcat (rtos slope_permille 2 slope_round_to) "‰")
-                                                                 (rtos slope_permille 2 slope_round_to))))
+                                             (setq slope_text (if show_permille_sign (strcat (rtos slope_permille 2 slope_round_to) "‰") (rtos slope_permille 2 slope_round_to))))
                                             ((eq slope_unit "degrees")
                                              (setq slope (* (atan (abs delta_y_scaled) delta_x_scaled) (/ 180 pi)))
                                              (setq slope_text (strcat (rtos slope 2 slope_round_to) "°")))
@@ -1053,14 +1021,8 @@ poper_help : dialog {
                                              (setq slope_text (strcat "1:" (rtos (/ 1 slope) 2 slope_round_to))))
                                             ((eq slope_unit "auto")
                                              (if (> slope_permille 150)
-                                                 (progn
-                                                     (setq slope (/ (abs delta_y_scaled) delta_x_scaled))
-                                                     (setq slope_text (strcat "1:" (rtos (/ 1 slope) 2 slope_round_to))))
-                                                 (progn
-                                                     (setq slope_text (if show_permille_sign
-                                                                         (strcat (rtos slope_permille 2 slope_round_to) "‰")
-                                                                         (rtos slope_permille 2 slope_round_to))))
-                                             ))
+                                                 (progn (setq slope (/ (abs delta_y_scaled) delta_x_scaled)) (setq slope_text (strcat "1:" (rtos (/ 1 slope) 2 slope_round_to))))
+                                                 (progn (setq slope_text (if show_permille_sign (strcat (rtos slope_permille 2 slope_round_to) "‰") (rtos slope_permille 2 slope_round_to))))))
                                         )
                                         (setq text_x (if (> delta_y_scaled 0) (car pt1) (car pt2)))
                                         (setq text_alignment (if (> delta_y_scaled 0) 1 3))
@@ -1092,27 +1054,18 @@ poper_help : dialog {
                 )
             )
 
-            ;; Главная полилиния + XData + реактор
+            ;; PROFILE + XData + reactor
             (if profile-ename
                 (progn
                     (setq poper-id (poper-get-id profile-ename))
                     (poper-xdata-set profile-ename
-                        (list
-                            (cons 'type "PROFILE")
-                            (cons 'poper-id poper-id)
-                            (cons 'h_scale h_scale)
-                            (cons 'l_scale l_scale)
-                            (cons 'text_height text_height)
-                            (cons 'text_offset text_offset)
-                            (cons 'round_to round_to)
-                            (cons 'slope_round_to slope_round_to)
-                            (cons 'slope_unit slope_unit)
-                            (cons 'show_permille_sign show_permille_sign)
-                            (cons 'OSZ OSZ)
-                            (cons 'OSH OSH)
-                            (cons 'mode (cond ((= mode_points "1") "points") ((= mode_vectors "1") "vectors") (t "polyline")))
-                        )
-                    )
+                        (list (cons 'type "PROFILE") (cons 'poper-id poper-id)
+                              (cons 'h_scale h_scale) (cons 'l_scale l_scale)
+                              (cons 'text_height text_height) (cons 'text_offset text_offset)
+                              (cons 'round_to round_to) (cons 'slope_round_to slope_round_to)
+                              (cons 'slope_unit slope_unit) (cons 'show_permille_sign show_permille_sign)
+                              (cons 'OSZ OSZ) (cons 'OSH OSH)
+                              (cons 'mode (cond ((= mode_points "1") "points") ((= mode_vectors "1") "vectors") (t "polyline")))))
                     (poper-attach-reactor profile-ename)
                 )
             )
@@ -1131,6 +1084,6 @@ poper_help : dialog {
 )
 
 (defun C:ПОПЕР () (C:POPER))
-(princ "\nSwift POPER v3.5 (ФИКС stringp nil) полностью ассоциативный (ПОЛНЫЙ КОД) загружен. Команды: POPER, POPERUPDATE, POPER-RESTORE")
+(princ "\nSwift POPER v3.5 (ФИКС DXF + сохранение toggle) загружен. Команды: POPER, POPERUPDATE, POPER-RESTORE")
 (princ)
 ; SWIFT-END
