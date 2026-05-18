@@ -1,24 +1,24 @@
 ; SWIFT-START
 ; ================================================
-; Swift POPER v3.5 — ПОЛНЫЙ АССОЦИАТИВНЫЙ ИНСТРУМЕНТ
+; Swift POPER v3.5 — ПОЛНЫЙ АССОЦИАТИВНЫЙ ИНСТРУМЕНТ (ФИКС stringp nil в reactor)
 ; Полная реализация требований пользователя:
 ; 1. Три режима (По точкам / По векторам / По вершинам полилинии)
 ; 2. Всё связано через XData (POPER_ID = handle главной полилинии)
-; 3. Настройки сохраняются в XData главной полилинии (SWIFT_POPER_SETTINGS)
+; 3. Настройки сохраняются в XData главной полилинии
 ; 4. Object Reactor — мгновенное обновление при grip/stretch/move/PEDIT
 ; 5. POPERUPDATE — резервная команда
 ; 6. Автовосстановление после перезагрузки чертежа
 ; 7. Точки в режиме "По точкам" — слой PoperSwift_Source, никогда не удаляются
 ; ================================================
-; Все функции взяты из https://github.com/egoist1313/SWIFT-AutoLISP/blob/main/CLAUDE.md
-; ФИКС ОШИБКИ: "no function definition: VL-PUSH-ERROR-USING-COMMAND"
-;   • Убраны vl-push-error-using-command / vl-pop-error-mode (не существуют в старых AutoCAD)
-;   • *error* handler упрощён до классического безопасного варианта
-;   • command заменён на command-s где возможно
-;   • Полный код без единого сокращения
+; ФИКС: "неверный тип аргумента: stringp nil" в poper-full-update при stretch
+;   • Добавлены проверки nil / numberp перед nth, rtos, vla-put-textstring
+;   • Используется vl-catch-all-apply для безопасного обновления каждой аннотации
+;   • Улучшено получение coords через poper-get-sorted-coords (сортировка по X для соответствия индексам)
+;   • Улучшена poper-xdata-set — удаляет только XData этого приложения (не все -3)
+;   • Полный код без сокращений
+;   • Сразу отредактировано и закоммичено в main
 ; ================================================
-; Commit: v3.5-full-no-shortcuts-error-fix-final (текущая ветка main)
-; Редактировано сразу в Poper_Swift.lsp
+; Commit: v3.5-reactor-stringp-nil-fix-safe-update (текущая ветка main)
 ; ================================================
 
 (vl-load-com)
@@ -185,11 +185,16 @@ poper_help : dialog {
   )
 )
 
-(defun poper-xdata-set (ename data / ed xd old-xd)
+(defun poper-xdata-set (ename data / ed xd app-xdata)
   (poper-regapp)
   (setq ed (entget ename (list *SWIFT_POPER_APPNAME*)))
-  ; Удалить старую XData этого приложения
-  (setq ed (vl-remove-if '(lambda (x) (= (car x) -3)) ed))
+  ; Удалить ТОЛЬКО XData этого приложения (не все -3 !)
+  (setq ed 
+    (vl-remove-if 
+      '(lambda (x) 
+         (and (= (car x) -3)
+              (assoc *SWIFT_POPER_APPNAME* (cdr x))))
+      ed))
   ; Сериализовать data в строку и записать как один код 1000
   (setq xd (cons -3 (list (list *SWIFT_POPER_APPNAME* (cons 1000 (vl-prin1-to-string data))))))
   (entmod (append ed (list xd)))
@@ -274,16 +279,18 @@ poper_help : dialog {
   )
 )
 
-;; ====================== ПОЛНОЕ ОБНОВЛЕНИЕ ======================
+;; ====================== ПОЛНОЕ ОБНОВЛЕНИЕ (БЕЗОПАСНАЯ ВЕРСИЯ) ======================
 (defun poper-full-update (poper-id / profile-ename xd-settings coords sorted-coords heights i pt final-height
                           all-objects xd obj-type obj-index obj-en text-obj
                           pt1 pt2 delta-x delta-y delta-x-scaled delta-y-scaled slope-permille slope-text
-                          mid-x h_scale l_scale text_height text_offset round_to slope_round_to slope_unit show_permille_sign OSZ OSH)
+                          mid-x h_scale l_scale text_height text_offset round_to slope_round_to slope_unit show_permille_sign OSZ OSH
+                          result err)
   (vl-load-com)
   (setq profile-ename (car (poper-find-objects-by-id poper-id)))
-  (if (null profile-ename) (exit))
+  (if (null profile-ename) (progn (princ "\n[POPER] Ошибка: профиль не найден") (exit)))
   (setq xd-settings (poper-xdata-get profile-ename))
-  (if (null xd-settings) (exit))
+  (if (null xd-settings) (progn (princ "\n[POPER] Ошибка: настройки XData не найдены") (exit)))
+
   (setq h_scale (or (cdr (assoc 'h_scale xd-settings)) 1.0))
   (setq l_scale (or (cdr (assoc 'l_scale xd-settings)) 1.0))
   (setq text_height (or (cdr (assoc 'text_height xd-settings)) 2.5))
@@ -294,79 +301,133 @@ poper_help : dialog {
   (setq show_permille_sign (cdr (assoc 'show_permille_sign xd-settings)))
   (setq OSZ (or (cdr (assoc 'OSZ xd-settings)) '(0.0 0.0 0.0)))
   (setq OSH (or (cdr (assoc 'OSH xd-settings)) 0.0))
+
+  ;; Получаем координаты через vlax-get (flat list) и сортируем по X (соответствует логике индексов при создании)
   (setq obj (vlax-ename->vla-object profile-ename))
   (setq coords (vlax-get obj 'Coordinates))
-  (setq sorted-coords (poper-get-sorted-coords coords))
+  (setq sorted-coords (if coords (poper-get-sorted-coords coords) '()))
+
   (setq heights '())
   (foreach pt sorted-coords
-    (setq final-height (+ OSH (* (- (cadr pt) (cadr OSZ)) (/ 1.0 h_scale))))
-    (setq heights (append heights (list final-height)))
-  )
-  (setq all-objects (poper-find-objects-by-id poper-id))
-  (foreach obj-en all-objects
-    (setq xd (poper-xdata-get obj-en))
-    (setq obj-type (cdr (assoc 'type xd)))
-    (setq obj-index (cdr (assoc 'index xd)))
-    (cond
-      ((equal obj-type "HEIGHT")
-       (setq pt (nth obj-index sorted-coords))
-       (setq final-height (nth obj-index heights))
-       (setq text-obj (vlax-ename->vla-object obj-en))
-       (vla-put-textstring text-obj (rtos final-height 2 round_to))
-       (vla-put-insertionpoint text-obj (vlax-3d-point (car pt) (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
-      )
-      ((equal obj-type "LENGTH")
-       (if (> obj-index 0)
-         (progn
-           (setq pt1 (nth (1- obj-index) sorted-coords))
-           (setq pt2 (nth obj-index sorted-coords))
-           (setq delta-x (* (- (car pt2) (car pt1)) (/ 1.0 l_scale)))
-           (setq text-obj (vlax-ename->vla-object obj-en))
-           (vla-put-textstring text-obj (rtos delta-x 2 2))
-           (setq mid-x (/ (+ (car pt1) (car pt2)) 2.0))
-           (vla-put-insertionpoint text-obj (vlax-3d-point mid-x (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
-         )
-       )
-      )
-      ((equal obj-type "SLOPE")
-       (if (> obj-index 0)
-         (progn
-           (setq pt1 (nth (1- obj-index) sorted-coords))
-           (setq pt2 (nth obj-index sorted-coords))
-           (setq delta-x (- (car pt2) (car pt1)))
-           (setq delta-y (- (cadr pt2) (cadr pt1)))
-           (setq delta-x-scaled (/ delta-x l_scale))
-           (setq delta-y-scaled (/ delta-y h_scale))
-           (if (>= (abs delta-x-scaled) 0.01)
-             (progn
-               (setq slope-permille (* (/ (abs delta-y-scaled) delta-x-scaled) 1000))
-               (cond
-                 ((equal slope_unit "permille") (setq slope-text (if show_permille_sign (strcat (rtos slope-permille 2 slope_round_to) "‰") (rtos slope-permille 2 slope_round_to))))
-                 ((equal slope_unit "degrees") (setq slope-text (strcat (rtos (* (atan (abs delta-y-scaled) delta-x-scaled) (/ 180 pi)) 2 slope_round_to) "°")))
-                 ((equal slope_unit "ratio") (setq slope-text (strcat "1:" (rtos (/ 1 (/ (abs delta-y-scaled) delta-x-scaled)) 2 slope_round_to))))
-                 (t (setq slope-text (rtos slope-permille 2 slope_round_to)))
-               )
-               (setq text-obj (vlax-ename->vla-object obj-en))
-               (vla-put-textstring text-obj slope-text)
-               (vla-put-insertionpoint text-obj (vlax-3d-point (if (> delta-y-scaled 0) (car pt1) (car pt2)) (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
-             )
-           )
-         )
-       )
-      )
-      ((equal obj-type "TICK")
-       (command-s "_.REGEN")
+    (if (and (listp pt) (>= (length pt) 2) (numberp (cadr pt)) (numberp (cadr OSZ)) (numberp h_scale) (numberp OSH))
+      (progn
+        (setq final-height (+ OSH (* (- (cadr pt) (cadr OSZ)) (/ 1.0 h_scale))))
+        (setq heights (append heights (list final-height)))
       )
     )
   )
+
+  (setq all-objects (poper-find-objects-by-id poper-id))
+  (foreach obj-en all-objects
+    (setq xd (poper-xdata-get obj-en))
+    (if xd
+      (progn
+        (setq obj-type (cdr (assoc 'type xd)))
+        (setq obj-index (cdr (assoc 'index xd)))
+        (if (not (numberp obj-index)) (setq obj-index -1))
+        (cond
+          ((equal obj-type "HEIGHT")
+           (if (and (>= obj-index 0) (< obj-index (length sorted-coords)) (setq pt (nth obj-index sorted-coords)) (setq final-height (nth obj-index heights)) (numberp final-height) (listp pt))
+             (progn
+               (setq text-obj (vlax-ename->vla-object obj-en))
+               (if (and text-obj (not (vlax-erased-p text-obj)))
+                 (progn
+                   (setq result (vl-catch-all-apply 
+                     '(lambda () 
+                        (vla-put-textstring text-obj (rtos final-height 2 round_to))
+                        (vla-put-insertionpoint text-obj (vlax-3d-point (car pt) (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
+                      )))
+                   (if (vl-catch-all-error-p result)
+                     (princ (strcat "\n[POPER] Ошибка обновления HEIGHT[" (itoa obj-index) "]: " (vl-catch-all-error-message result)))
+                   )
+                 )
+               )
+             )
+           )
+          )
+          ((equal obj-type "LENGTH")
+           (if (and (> obj-index 0) (< obj-index (length sorted-coords)) (setq pt1 (nth (1- obj-index) sorted-coords)) (setq pt2 (nth obj-index sorted-coords)) (listp pt1) (listp pt2))
+             (progn
+               (setq delta-x (* (- (car pt2) (car pt1)) (/ 1.0 l_scale)))
+               (setq text-obj (vlax-ename->vla-object obj-en))
+               (if (and text-obj (not (vlax-erased-p text-obj)))
+                 (progn
+                   (setq result (vl-catch-all-apply 
+                     '(lambda () 
+                        (vla-put-textstring text-obj (rtos delta-x 2 2))
+                        (setq mid-x (/ (+ (car pt1) (car pt2)) 2.0))
+                        (vla-put-insertionpoint text-obj (vlax-3d-point mid-x (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
+                      )))
+                   (if (vl-catch-all-error-p result)
+                     (princ (strcat "\n[POPER] Ошибка обновления LENGTH[" (itoa obj-index) "]: " (vl-catch-all-error-message result)))
+                   )
+                 )
+               )
+             )
+           )
+          )
+          ((equal obj-type "SLOPE")
+           (if (and (> obj-index 0) (< obj-index (length sorted-coords)) (setq pt1 (nth (1- obj-index) sorted-coords)) (setq pt2 (nth obj-index sorted-coords)) (listp pt1) (listp pt2))
+             (progn
+               (setq delta-x (- (car pt2) (car pt1)))
+               (setq delta-y (- (cadr pt2) (cadr pt1)))
+               (setq delta-x-scaled (if (and (numberp delta-x) (numberp l_scale) (/= l_scale 0)) (/ delta-x l_scale) 0.0))
+               (setq delta-y-scaled (if (and (numberp delta-y) (numberp h_scale) (/= h_scale 0)) (/ delta-y h_scale) 0.0))
+               (if (>= (abs delta-x-scaled) 0.01)
+                 (progn
+                   (setq slope-permille (* (/ (abs delta-y-scaled) delta-x-scaled) 1000))
+                   (cond
+                     ((equal slope_unit "permille") 
+                      (setq slope-text (if show_permille_sign 
+                                       (strcat (rtos slope-permille 2 slope_round_to) "‰") 
+                                       (rtos slope-permille 2 slope_round_to))))
+                     ((equal slope_unit "degrees") 
+                      (setq slope-text (strcat (rtos (* (atan (abs delta-y-scaled) delta-x-scaled) (/ 180 pi)) 2 slope_round_to) "°")))
+                     ((equal slope_unit "ratio") 
+                      (setq slope-text (strcat "1:" (rtos (/ 1 (/ (abs delta-y-scaled) delta-x-scaled)) 2 slope_round_to))))
+                     (t (setq slope-text (rtos slope-permille 2 slope_round_to)))
+                   )
+                   (if (null slope-text) (setq slope-text ""))
+                   (setq text-obj (vlax-ename->vla-object obj-en))
+                   (if (and text-obj (not (vlax-erased-p text-obj)))
+                     (progn
+                       (setq result (vl-catch-all-apply 
+                         '(lambda () 
+                            (vla-put-textstring text-obj slope-text)
+                            (vla-put-insertionpoint text-obj (vlax-3d-point (if (> delta-y-scaled 0) (car pt1) (car pt2)) (cadr (vlax-get text-obj 'InsertionPoint)) 0.0))
+                          )))
+                       (if (vl-catch-all-error-p result)
+                         (princ (strcat "\n[POPER] Ошибка обновления SLOPE[" (itoa obj-index) "]: " (vl-catch-all-error-message result)))
+                       )
+                     )
+                   )
+                 )
+               )
+             )
+           )
+          )
+          ((equal obj-type "TICK")
+           ;; TICK lines currently not fully associative (top/bottom points not stored). Just regen once.
+           (if (not (member "REGEN" (or *poper-tick-regen* '())))
+             (progn 
+               (command-s "_.REGEN")
+               (setq *poper-tick-regen* (cons "REGEN" (or *poper-tick-regen* '())))
+             )
+           )
+          )
+        )
+      )
+    )
+  )
+  (setq *poper-tick-regen* nil) ; reset for next call
   (princ (strcat "\n[POPER v3.5] Полное обновление завершено для POPER_ID " poper-id))
   (princ)
 )
 
 (defun poper-get-sorted-coords (coords / pts i pt)
   (setq pts '())
-  (if (null (cdr coords))
-    (setq pts (list (list (car coords) (cadr coords) 0.0)))
+  (if (or (null coords) (null (cdr coords)))
+    (if coords (setq pts (list (list (car coords) (cadr coords) 0.0))) '())
     (progn
       (setq i 0)
       (while (< i (length coords))
@@ -755,7 +816,7 @@ poper_help : dialog {
                     (setq heights '())
                     (foreach pt PCoords
                         (setq final_height (+ OSH (* (- (cadr pt) (cadr OSZ)) (/ 1.0 h_scale))))
-                        (setq heights (append heights (list final_height)))
+                        (setq heights (append heights (list final-height)))
                     )
                     (setq original_PCoords PCoords)
                     (if (>= point_count 2)
@@ -830,7 +891,7 @@ poper_help : dialog {
                     (setq heights '())
                     (foreach pt PCoords
                         (setq final_height (+ OSH (* (- (cadr pt) (cadr OSZ)) (/ 1.0 h_scale))))
-                        (setq heights (append heights (list final_height)))
+                        (setq heights (append heights (list final-height)))
                     )
                     (setq original_PCoords PCoords)
                     (if (>= point_count 2)
@@ -905,8 +966,8 @@ poper_help : dialog {
             (if (and show_lengths (> point_count 0))
                 (progn
                     (prompt "\nУкажите верх и низ строки для размещения текста длины")
-                    (setq top_point_length (getpoint "\nУкажите верхнюю точку строки для длины: "))
-                    (setq bottom_point_length (getpoint "\nУкажите нижнюю точку строки для длины: "))
+                    (setq top_point_length (getpoint "\nУкажите верхнюю точку строки для длины: ")))
+                    (setq bottom_point_length (getpoint "\nУкажите нижнюю точку строки для длины: ")))
                     (setq sorted_PCoords (vl-sort original_PCoords '(lambda (a b) (< (car a) (car b)))))
                     (setq i 0)
                     (foreach pt sorted_PCoords
@@ -955,8 +1016,8 @@ poper_help : dialog {
             (if (and show_slopes (> point_count 1))
                 (progn
                     (prompt "\nУкажите верх и низ строки для размещения текста уклона")
-                    (setq top_point_slope (getpoint "\nУкажите верхнюю точку строки для уклона: "))
-                    (setq bottom_point_slope (getpoint "\nУкажите нижнюю точку строки для уклона: "))
+                    (setq top_point_slope (getpoint "\nУкажите верхнюю точку строки для уклона: ")))
+                    (setq bottom_point_slope (getpoint "\nУкажите нижнюю точку строки для уклона: ")))
                     (setq sorted_PCoords (vl-sort original_PCoords '(lambda (a b) (< (car a) (car b)))))
                     (setq i 0)
                     (foreach pt sorted_PCoords
@@ -1070,6 +1131,6 @@ poper_help : dialog {
 )
 
 (defun C:ПОПЕР () (C:POPER))
-(princ "\nSwift POPER v3.5 полностью ассоциативный (ПОЛНЫЙ КОД без сокращений) загружен. Команды: POPER, POPERUPDATE, POPER-RESTORE")
+(princ "\nSwift POPER v3.5 (ФИКС stringp nil) полностью ассоциативный (ПОЛНЫЙ КОД) загружен. Команды: POPER, POPERUPDATE, POPER-RESTORE")
 (princ)
 ; SWIFT-END
